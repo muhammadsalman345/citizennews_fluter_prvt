@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/errors/app_error.dart';
 import '../../../core/layout/app_breakpoints.dart';
+import '../../../core/navigation/app_navigation.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/presentation/auth_scope.dart';
 import '../data/article_analytics_repository.dart';
@@ -85,7 +86,7 @@ class _ArticleAnalyticsScreenState extends State<ArticleAnalyticsScreen> {
                       Align(
                         alignment: Alignment.centerLeft,
                         child: TextButton.icon(
-                          onPressed: () => context.go('/my-stories'),
+                          onPressed: () => context.backOr('/my-stories'),
                           icon: const Icon(Icons.arrow_back_rounded),
                           label: const Text('My stories'),
                         ),

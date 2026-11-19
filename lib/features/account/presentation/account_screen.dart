@@ -46,6 +46,8 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _initialized = false;
   bool _loading = true;
   bool _busy = false;
+  bool _showPassword = false;
+  bool _showPasswordConfirmation = false;
   String? _error;
 
   @override
@@ -376,6 +378,7 @@ class _AccountScreenState extends State<AccountScreen> {
   @override
   Widget build(BuildContext context) {
     final mobile = MediaQuery.sizeOf(context).width <= AppBreakpoints.mobile;
+    final session = AuthScope.watch(context);
     return SafeArea(
       child: RefreshIndicator(
         onRefresh: _load,
@@ -396,19 +399,11 @@ class _AccountScreenState extends State<AccountScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
-                      'YOUR CITIZENNEWS',
-                      style: TextStyle(
-                        color: AppColors.red,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _title,
-                      style: Theme.of(context).textTheme.headlineLarge,
+                    _AccountPageHeader(
+                      mode: widget.mode,
+                      title: _title,
+                      subtitle: _subtitle,
+                      displayName: session.displayName,
                     ),
                     const SizedBox(height: 12),
                     _AccountNavigation(selected: widget.mode),
@@ -441,6 +436,19 @@ class _AccountScreenState extends State<AccountScreen> {
     AccountMode.following => 'Following',
     AccountMode.comments => 'Your comments',
     AccountMode.appeals => 'Appeals and reports',
+  };
+
+  String get _subtitle => switch (widget.mode) {
+    AccountMode.profile =>
+      'Manage your public identity and CitizenNews activity.',
+    AccountMode.settings =>
+      'Control your security, language, advertising and account data.',
+    AccountMode.saved => 'Stories you bookmarked for reading later.',
+    AccountMode.following =>
+      'Reporters, places and topics shaping your personal feed.',
+    AccountMode.comments => 'Review your recent community conversations.',
+    AccountMode.appeals =>
+      'Track verification appeals and submitted content reports.',
   };
 
   Widget _content() => switch (widget.mode) {
@@ -504,6 +512,22 @@ class _AccountScreenState extends State<AccountScreen> {
                         session.user!.email!,
                         style: const TextStyle(color: AppColors.muted),
                       ),
+                    if (profile?.bio.isNotEmpty == true) ...[
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Text(
+                          profile!.bio,
+                          textAlign: TextAlign.center,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.muted,
+                            height: 1.45,
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 7,
@@ -650,6 +674,10 @@ class _AccountScreenState extends State<AccountScreen> {
       padding: const EdgeInsets.all(12),
       child: Column(
         children: [
+          const _HubGroupTitle(
+            icon: Icons.auto_awesome_mosaic_outlined,
+            title: 'Your activity',
+          ),
           const _HubLink(
             icon: Icons.bookmark_outline_rounded,
             label: 'Saved stories',
@@ -669,6 +697,11 @@ class _AccountScreenState extends State<AccountScreen> {
             icon: Icons.gavel_outlined,
             label: 'Appeals and reports',
             path: '/appeals',
+          ),
+          const Divider(),
+          const _HubGroupTitle(
+            icon: Icons.manage_accounts_outlined,
+            title: 'Account tools',
           ),
           const _HubLink(
             icon: Icons.verified_user_outlined,
@@ -693,6 +726,10 @@ class _AccountScreenState extends State<AccountScreen> {
             path: '/settings',
           ),
           const Divider(),
+          const _HubGroupTitle(
+            icon: Icons.info_outline_rounded,
+            title: 'CitizenNews and support',
+          ),
           for (final destination in legalDestinations)
             _HubLink(
               icon: _accountLegalIcon(destination.path),
@@ -733,19 +770,49 @@ class _AccountScreenState extends State<AccountScreen> {
           const SizedBox(height: 14),
           TextField(
             controller: _password,
-            obscureText: true,
+            obscureText: !_showPassword,
             enableSuggestions: false,
             autocorrect: false,
-            decoration: const InputDecoration(labelText: 'New password'),
+            decoration: InputDecoration(
+              labelText: 'New password',
+              prefixIcon: const Icon(Icons.lock_outline_rounded),
+              suffixIcon: IconButton(
+                tooltip: _showPassword ? 'Hide password' : 'Show password',
+                onPressed: () =>
+                    setState(() => _showPassword = !_showPassword),
+                icon: Icon(
+                  _showPassword
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: _passwordConfirmation,
-            obscureText: true,
+            obscureText: !_showPasswordConfirmation,
             enableSuggestions: false,
             autocorrect: false,
             onSubmitted: (_) => _changePassword(),
-            decoration: const InputDecoration(labelText: 'Confirm password'),
+            decoration: InputDecoration(
+              labelText: 'Confirm password',
+              prefixIcon: const Icon(Icons.lock_outline_rounded),
+              suffixIcon: IconButton(
+                tooltip: _showPasswordConfirmation
+                    ? 'Hide password'
+                    : 'Show password',
+                onPressed: () => setState(
+                  () => _showPasswordConfirmation =
+                      !_showPasswordConfirmation,
+                ),
+                icon: Icon(
+                  _showPasswordConfirmation
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           FilledButton(
@@ -851,7 +918,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       child: const Text('Unfollow'),
                     ),
                     onTap: data.follows[index].username?.isNotEmpty == true
-                        ? () => context.go(
+                        ? () => context.push(
                             '/reporter/${Uri.encodeComponent(data.follows[index].username!)}',
                           )
                         : null,
@@ -910,7 +977,7 @@ class _AccountScreenState extends State<AccountScreen> {
                   ? const Icon(Icons.open_in_new_rounded)
                   : null,
               onTap: _comments[index].slug?.isNotEmpty == true
-                  ? () => context.go('/news/${_comments[index].slug}')
+                  ? () => context.push('/news/${_comments[index].slug}')
                   : null,
             ),
             if (index != _comments.length - 1) const Divider(height: 1),
@@ -1023,32 +1090,168 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 }
 
+class _AccountPageHeader extends StatelessWidget {
+  const _AccountPageHeader({
+    required this.mode,
+    required this.title,
+    required this.subtitle,
+    required this.displayName,
+  });
+
+  final AccountMode mode;
+  final String title;
+  final String subtitle;
+  final String displayName;
+
+  IconData get _icon => switch (mode) {
+    AccountMode.profile => Icons.person_outline_rounded,
+    AccountMode.settings => Icons.tune_rounded,
+    AccountMode.saved => Icons.bookmark_outline_rounded,
+    AccountMode.following => Icons.people_outline_rounded,
+    AccountMode.comments => Icons.chat_bubble_outline_rounded,
+    AccountMode.appeals => Icons.gavel_outlined,
+  };
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [
+          AppColors.red.withValues(alpha: .08),
+          AppColors.focus.withValues(alpha: .035),
+        ],
+      ),
+      border: Border.all(color: AppColors.red.withValues(alpha: .15)),
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: AppColors.paper,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(_icon, color: AppColors.red),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                displayName.isEmpty
+                    ? 'YOUR CITIZENNEWS'
+                    : displayName.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.red,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.25,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(title, style: Theme.of(context).textTheme.headlineLarge),
+              const SizedBox(height: 5),
+              Text(
+                subtitle,
+                style: const TextStyle(color: AppColors.muted, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class _AccountNavigation extends StatelessWidget {
   const _AccountNavigation({required this.selected});
   final AccountMode selected;
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    child: Row(
-      children: [
-        for (final item in const [
-          (AccountMode.profile, 'Account', '/account'),
-          (AccountMode.saved, 'Saved', '/saved'),
-          (AccountMode.following, 'Following', '/following'),
-          (AccountMode.comments, 'Comments', '/comments'),
-          (AccountMode.appeals, 'Appeals', '/appeals'),
-          (AccountMode.settings, 'Settings', '/settings'),
-        ])
-          Padding(
-            padding: const EdgeInsets.only(right: 7),
-            child: ChoiceChip(
-              label: Text(item.$2),
-              selected: selected == item.$1,
-              onSelected: (_) => context.go(item.$3),
+  Widget build(BuildContext context) => Material(
+    color: AppColors.paper,
+    shape: RoundedRectangleBorder(
+      side: const BorderSide(color: AppColors.border),
+      borderRadius: BorderRadius.circular(14),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.all(5),
+      child: Row(
+        children: [
+          for (final item in const [
+            (AccountMode.profile, 'Account', Icons.person_outline_rounded, '/account'),
+            (AccountMode.saved, 'Saved', Icons.bookmark_outline_rounded, '/saved'),
+            (AccountMode.following, 'Following', Icons.people_outline_rounded, '/following'),
+            (AccountMode.comments, 'Comments', Icons.chat_bubble_outline_rounded, '/comments'),
+            (AccountMode.appeals, 'Appeals', Icons.gavel_outlined, '/appeals'),
+            (AccountMode.settings, 'Settings', Icons.tune_rounded, '/settings'),
+          ])
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: _AccountNavButton(
+                label: item.$2,
+                icon: item.$3,
+                selected: selected == item.$1,
+                onTap: () => context.go(item.$4),
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
+    ),
+  );
+}
+
+class _AccountNavButton extends StatelessWidget {
+  const _AccountNavButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: selected ? AppColors.red : Colors.transparent,
+    borderRadius: BorderRadius.circular(10),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 17,
+              color: selected ? Colors.white : AppColors.muted,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : AppColors.ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
     ),
   );
 }
@@ -1061,10 +1264,45 @@ class _HubLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListTile(
-    leading: Icon(icon),
+    leading: Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(icon, size: 20, color: AppColors.ink),
+    ),
     title: Text(label),
     trailing: const Icon(Icons.chevron_right_rounded),
-    onTap: () => context.go(path),
+    onTap: () => context.push(path),
+  );
+}
+
+class _HubGroupTitle extends StatelessWidget {
+  const _HubGroupTitle({required this.icon, required this.title});
+
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+    child: Row(
+      children: [
+        Icon(icon, size: 17, color: AppColors.red),
+        const SizedBox(width: 7),
+        Text(
+          title.toUpperCase(),
+          style: const TextStyle(
+            color: AppColors.red,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            letterSpacing: .8,
+          ),
+        ),
+      ],
+    ),
   );
 }
 
@@ -1077,7 +1315,7 @@ class _AccountStoryCard extends StatelessWidget {
   Widget build(BuildContext context) => Card(
     clipBehavior: Clip.antiAlias,
     child: InkWell(
-      onTap: () => context.go('/news/${story.slug}'),
+      onTap: () => context.push('/news/${story.slug}'),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

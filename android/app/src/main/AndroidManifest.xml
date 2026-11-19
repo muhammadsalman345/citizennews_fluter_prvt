@@ -6,9 +6,10 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <application
-        android:label="Citizen News"
+        android:label="CitizenNews"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
         <!-- Publisher app ID; Dart defaults to Google's dedicated test ad
              units until ADMOB_USE_TEST_ADS is explicitly disabled. -->
         <meta-data

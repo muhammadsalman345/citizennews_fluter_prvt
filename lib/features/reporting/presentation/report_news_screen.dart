@@ -314,6 +314,7 @@ class _ReportNewsScreenState extends State<ReportNewsScreen> {
         ? _body.text.isNotEmpty
         : _body.text != _plainText(_originalBody!);
     _preview = false;
+    if (mounted) setState(() {});
     _autosave?.cancel();
     _autosave = Timer(const Duration(milliseconds: 500), () {
       unawaited(_persistDraft());
@@ -1087,6 +1088,18 @@ class _ReportNewsScreenState extends State<ReportNewsScreen> {
     return '${_ymd(local)} ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
 
+  bool get _detailsReady =>
+      _mainCategoryId.isNotEmpty &&
+      _headline.text.trim().isNotEmpty &&
+      _body.text.trim().isNotEmpty;
+
+  bool get _evidenceReady {
+    if (_isRevision) return true;
+    if (_location == null) return false;
+    if (_selectedCategory?.cameraOnly == true) return _images.isNotEmpty;
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
@@ -1095,32 +1108,18 @@ class _ReportNewsScreenState extends State<ReportNewsScreen> {
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 48),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppBreakpoints.mobile),
+            constraints: const BoxConstraints(
+              maxWidth: AppBreakpoints.contentMax,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  _isRevision ? 'SUBMIT A CORRECTION' : 'REPORT NEWS',
-                  style: const TextStyle(
-                    color: AppColors.red,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _isRevision
-                      ? 'Correct your published story'
-                      : widget.postId == null
-                          ? 'Share verified local news'
-                          : 'Update your story',
-                  style: Theme.of(context).textTheme.headlineLarge,
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Your text, evidence and GPS context use the same review workflow as the CitizenNews website.',
-                  style: TextStyle(color: AppColors.muted, height: 1.45),
+                _ReportWorkspaceHeader(
+                  revision: _isRevision,
+                  editing: widget.postId != null,
+                  detailsReady: _detailsReady,
+                  evidenceReady: _evidenceReady,
+                  previewReady: _preview,
                 ),
                 if (_draftRestored) ...[
                   const SizedBox(height: 12),
@@ -1149,34 +1148,39 @@ class _ReportNewsScreenState extends State<ReportNewsScreen> {
                   _Notice(icon: Icons.sync_rounded, text: _progress),
                 ],
                 const SizedBox(height: 18),
-                _storyCard(),
-                if (!_isRevision) ...[
-                  const SizedBox(height: 14),
-                  _evidenceCard(),
-                ],
-                if (_preview) ...[
-                  const SizedBox(height: 14),
-                  _previewCard(),
-                ],
-                const SizedBox(height: 18),
-                Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: _busy ? null : _showPreview,
-                      icon: const Icon(Icons.preview_outlined),
-                      label: const Text('Preview'),
-                    ),
-                    FilledButton.icon(
-                      onPressed: _busy ? null : _submit,
-                      icon: const Icon(Icons.send_rounded),
-                      label: Text(
-                        _isRevision ? 'Send correction' : 'Send for review',
-                      ),
-                    ),
-                  ],
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final wide = constraints.maxWidth >= 900;
+                    final sidebar = Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (!_isRevision) _evidenceCard(),
+                        if (_preview) ...[
+                          if (!_isRevision) const SizedBox(height: 14),
+                          _previewCard(),
+                        ],
+                        const SizedBox(height: 14),
+                        _submissionCard(),
+                      ],
+                    );
+                    return wide
+                        ? Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(flex: 5, child: _storyCard()),
+                              const SizedBox(width: 16),
+                              Expanded(flex: 3, child: sidebar),
+                            ],
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _storyCard(),
+                              const SizedBox(height: 14),
+                              sidebar,
+                            ],
+                          );
+                  },
                 ),
               ],
             ),
@@ -1192,11 +1196,18 @@ class _ReportNewsScreenState extends State<ReportNewsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Story details', style: Theme.of(context).textTheme.titleLarge),
+              const _SectionHeading(
+                icon: Icons.article_outlined,
+                title: 'Story details',
+                subtitle: 'Write a clear, factual account for editorial review.',
+              ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
                 initialValue: _mainCategoryId.isEmpty ? null : _mainCategoryId,
-                decoration: const InputDecoration(labelText: 'Category *'),
+                decoration: const InputDecoration(
+                  labelText: 'Category *',
+                  prefixIcon: Icon(Icons.category_outlined),
+                ),
                 items: [
                   for (final category in _mainCategories)
                     DropdownMenuItem(
@@ -1210,7 +1221,10 @@ class _ReportNewsScreenState extends State<ReportNewsScreen> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: _jobCategoryId.isEmpty ? null : _jobCategoryId,
-                  decoration: const InputDecoration(labelText: 'Job category *'),
+                  decoration: const InputDecoration(
+                    labelText: 'Job category *',
+                    prefixIcon: Icon(Icons.work_outline_rounded),
+                  ),
                   items: [
                     for (final category in _jobCategories)
                       DropdownMenuItem(
@@ -1244,6 +1258,7 @@ class _ReportNewsScreenState extends State<ReportNewsScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Headline *',
                   hintText: 'Describe what happened clearly',
+                  prefixIcon: Icon(Icons.title_rounded),
                 ),
               ),
               const SizedBox(height: 8),
@@ -1287,6 +1302,7 @@ class _ReportNewsScreenState extends State<ReportNewsScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Tags',
                   hintText: 'traffic, rain, community',
+                  prefixIcon: Icon(Icons.sell_outlined),
                 ),
               ),
               const SizedBox(height: 12),
@@ -1330,6 +1346,78 @@ class _ReportNewsScreenState extends State<ReportNewsScreen> {
                   ),
                 ),
               ],
+            ],
+          ),
+        ),
+      );
+
+  Widget _submissionCard() => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.fact_check_outlined,
+                    color: AppColors.red,
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      'Final review',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              const Text(
+                'Check names, dates, evidence and location before sending. Editorial review begins after submission.',
+                style: TextStyle(color: AppColors.muted, height: 1.45),
+              ),
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _showPreview,
+                icon: const Icon(Icons.preview_outlined),
+                label: const Text('Preview story'),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: _busy ? null : _submit,
+                icon: _busy
+                    ? const SizedBox.square(
+                        dimension: 17,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.send_rounded),
+                label: Text(
+                  _busy
+                      ? 'Working...'
+                      : _isRevision
+                          ? 'Send correction'
+                          : 'Send for review',
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.save_outlined, size: 15, color: AppColors.muted),
+                  SizedBox(width: 5),
+                  Flexible(
+                    child: Text(
+                      'Changes are saved locally while you work.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.muted, fontSize: 11),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -1403,13 +1491,12 @@ class _ReportNewsScreenState extends State<ReportNewsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Evidence & location', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 6),
-              Text(
-                _selectedCategory?.cameraOnly == true
+              _SectionHeading(
+                icon: Icons.add_a_photo_outlined,
+                title: 'Evidence & location',
+                subtitle: _selectedCategory?.cameraOnly == true
                     ? 'A fresh rear-camera photo is required for accident reports.'
-                    : 'Photos are optional. Up to five camera or gallery photos may be reviewed.',
-                style: const TextStyle(color: AppColors.muted),
+                    : 'Add up to five photos and confirm the reporting location.',
               ),
               const SizedBox(height: 12),
               if (_canManageEvidence)
@@ -1546,6 +1633,259 @@ class _ReportNewsScreenState extends State<ReportNewsScreen> {
             ],
           ),
         ),
+      );
+}
+
+class _ReportWorkspaceHeader extends StatelessWidget {
+  const _ReportWorkspaceHeader({
+    required this.revision,
+    required this.editing,
+    required this.detailsReady,
+    required this.evidenceReady,
+    required this.previewReady,
+  });
+
+  final bool revision;
+  final bool editing;
+  final bool detailsReady;
+  final bool evidenceReady;
+  final bool previewReady;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = revision
+        ? 'Correct your published story'
+        : editing
+            ? 'Update your story'
+            : 'Share verified local news';
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF101826), Color(0xFF202D41)],
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x26000000),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 16,
+            runSpacing: 14,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.red.withValues(alpha: .18),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.edit_document,
+                  color: Colors.white,
+                  size: 27,
+                ),
+              ),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 650),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'REPORTER NEWSROOM',
+                      style: TextStyle(
+                        color: Color(0xFFFF8A8A),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.6,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      revision
+                          ? 'Explain the correction clearly. Your published story stays visible until editorial approval.'
+                          : 'Build the story, attach supporting evidence and review everything before submission.',
+                      style: const TextStyle(
+                        color: Color(0xFFCBD5E1),
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => context.push('/my-stories'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Color(0xFF526175)),
+                ),
+                icon: const Icon(Icons.library_books_outlined),
+                label: const Text('My stories'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _ReportStep(
+                number: '1',
+                label: 'Story',
+                complete: detailsReady,
+                active: !detailsReady,
+              ),
+              _ReportStep(
+                number: '2',
+                label: 'Evidence',
+                complete: evidenceReady,
+                active: detailsReady && !evidenceReady,
+              ),
+              _ReportStep(
+                number: '3',
+                label: 'Review',
+                complete: previewReady,
+                active: detailsReady && evidenceReady,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportStep extends StatelessWidget {
+  const _ReportStep({
+    required this.number,
+    required this.label,
+    required this.complete,
+    required this.active,
+  });
+
+  final String number;
+  final String label;
+  final bool complete;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final highlighted = complete || active;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+        color: highlighted
+            ? Colors.white.withValues(alpha: .12)
+            : Colors.white.withValues(alpha: .05),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(
+          color: highlighted
+              ? Colors.white.withValues(alpha: .26)
+              : Colors.white.withValues(alpha: .1),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 23,
+            height: 23,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: complete
+                  ? AppColors.success
+                  : active
+                      ? AppColors.red
+                      : const Color(0xFF415065),
+              shape: BoxShape.circle,
+            ),
+            child: complete
+                ? const Icon(Icons.check_rounded, size: 15, color: Colors.white)
+                : Text(
+                    number,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 7),
+          Text(
+            label,
+            style: TextStyle(
+              color: highlighted ? Colors.white : const Color(0xFF94A3B8),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.red.withValues(alpha: .08),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, color: AppColors.red, size: 21),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       );
 }
 

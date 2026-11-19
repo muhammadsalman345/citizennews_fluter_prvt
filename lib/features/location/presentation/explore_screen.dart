@@ -78,6 +78,25 @@ class _ExploreScreenState extends State<ExploreScreen> {
   ) {
     final visible = countries.take(_countryLimit).toList(growable: false);
     return [
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Browse countries',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+          Text(
+            '${countries.length} available',
+            style: const TextStyle(
+              color: AppColors.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
       TextField(
         controller: _countrySearch,
         onChanged: (_) => setState(() => _countryLimit = 12),
@@ -135,13 +154,35 @@ class _ExploreScreenState extends State<ExploreScreen> {
     final selectedCountry = location.selectedCountry;
     final selectedRegion = location.selectedRegion;
     return [
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              selectedCountry == null
+                  ? 'Browse cities'
+                  : 'Cities in ${selectedCountry.name}',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+          if (!location.loading)
+            Text(
+              '${location.cities.length} shown',
+              style: const TextStyle(
+                color: AppColors.muted,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+        ],
+      ),
+      const SizedBox(height: 12),
       if (selectedCountry != null)
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
             OutlinedButton.icon(
-              onPressed: () => context.go(
+              onPressed: () => context.push(
                 '/country/${Uri.encodeComponent(selectedCountry.slug)}',
               ),
               icon: const Icon(Icons.public_rounded),
@@ -149,7 +190,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
             ),
             if (selectedRegion != null)
               OutlinedButton.icon(
-                onPressed: () => context.go(
+                onPressed: () => context.push(
                   '/region/${Uri.encodeComponent(selectedCountry.slug)}/${Uri.encodeComponent(selectedRegion.slug)}',
                 ),
                 icon: const Icon(Icons.map_outlined),
@@ -231,7 +272,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                         if (!context.mounted) return;
                         final country = location.selectedCountry;
                         if (country == null) return;
-                        context.go(
+                        context.push(
                           '/city/${Uri.encodeComponent(country.slug)}/${Uri.encodeComponent(city.slug)}',
                         );
                       },
@@ -271,43 +312,76 @@ class _DirectoryHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final browsingCities = location.countryId.isNotEmpty;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'EXPLORE DIRECTORY',
-                style: TextStyle(
-                  color: AppColors.red,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.5,
-                ),
-              ),
-              const SizedBox(height: 7),
-              Text(
-                browsingCities ? 'Cities' : 'Countries',
-                style: Theme.of(context).textTheme.headlineLarge,
-              ),
-              const SizedBox(height: 5),
-              Text(
-                browsingCities
-                    ? 'Choose a region or search for a city.'
-                    : 'Choose a country to browse its local news cities.',
-              ),
-            ],
-          ),
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.red.withValues(alpha: .09),
+            AppColors.focus.withValues(alpha: .035),
+          ],
         ),
-        if (browsingCities)
-          TextButton.icon(
-            onPressed: location.loading ? null : () => location.selectCountry(''),
-            icon: const Icon(Icons.arrow_back_rounded, size: 18),
-            label: const Text('All countries'),
+        border: Border.all(color: AppColors.red.withValues(alpha: .15)),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              color: AppColors.paper,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              browsingCities
+                  ? Icons.location_city_rounded
+                  : Icons.travel_explore_rounded,
+              color: AppColors.red,
+            ),
           ),
-      ],
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'EXPLORE NEWS',
+                  style: TextStyle(
+                    color: AppColors.red,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  browsingCities ? 'Find local reporting' : 'News by location',
+                  style: Theme.of(context).textTheme.headlineLarge,
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  browsingCities
+                      ? 'Choose a region or search for a city.'
+                      : 'Choose a country, then discover reporting from its cities.',
+                  style: const TextStyle(color: AppColors.muted, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+          if (browsingCities) ...[
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: location.loading
+                  ? null
+                  : () => location.selectCountry(''),
+              icon: const Icon(Icons.arrow_back_rounded, size: 18),
+              label: const Text('Countries'),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -320,8 +394,9 @@ class _CurrentLocationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Wrap(
           spacing: 16,
           runSpacing: 12,
@@ -332,7 +407,7 @@ class _CurrentLocationCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const CircleAvatar(
-                  backgroundColor: AppColors.surface,
+                  backgroundColor: Color(0xFFFFEEF0),
                   foregroundColor: AppColors.red,
                   child: Icon(Icons.location_on_outlined),
                 ),
@@ -347,9 +422,9 @@ class _CurrentLocationCard extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       location.selectedLabel.isEmpty
-                          ? 'No city selected'
+                          ? 'Choose a city for a personal feed'
                           : location.selectedLabel,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ],
                 ),
@@ -393,12 +468,12 @@ class _PlaceCard extends StatelessWidget {
     return Material(
       color: selected ? AppColors.surface : AppColors.paper,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
         side: BorderSide(color: selected ? AppColors.red : AppColors.border),
       ),
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -408,8 +483,10 @@ class _PlaceCard extends StatelessWidget {
                 height: 42,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(8),
+                  color: selected
+                      ? AppColors.red.withValues(alpha: .08)
+                      : AppColors.surface,
+                  borderRadius: BorderRadius.circular(11),
                 ),
                 child: Text(
                   code,

@@ -113,6 +113,17 @@ class _AdminScreenState extends State<AdminScreen> {
     await _load();
   }
 
+  void _selectTab(String tab) {
+    if (!tabs.contains(tab)) return;
+    setState(() {
+      _tab = tab;
+      _selected = null;
+      _review = null;
+      _selectedNews = null;
+      _newsReview = null;
+    });
+  }
+
   Future<void> _inspect(AdminVerificationItem item) async {
     setState(() {
       _selected = item;
@@ -351,6 +362,7 @@ class _AdminScreenState extends State<AdminScreen> {
   Widget build(BuildContext context) {
     final session = AuthScope.watch(context);
     final mobile = MediaQuery.sizeOf(context).width <= AppBreakpoints.mobile;
+    final tabInfo = _adminTabInfo(_tab);
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
@@ -367,63 +379,24 @@ class _AdminScreenState extends State<AdminScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'MODERATION WORKSPACE',
-                            style: TextStyle(
-                              color: AppColors.red,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.5,
-                            ),
-                          ),
-                          Text(
-                            session.isSuperAdmin ? 'Super admin' : 'Admin',
-                            style: Theme.of(context).textTheme.headlineLarge,
-                          ),
-                        ],
-                      ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _loading ? null : _refreshWorkspace,
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Refresh'),
-                    ),
-                  ],
+                _AdminWorkspaceHeader(
+                  superAdmin: session.isSuperAdmin,
+                  loading: _loading,
+                  onRefresh: _refreshWorkspace,
                 ),
-                const SizedBox(height: 18),
-                SizedBox(
-                  height: 44,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: tabs.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 7),
-                    itemBuilder: (context, index) {
-                      final tab = tabs[index];
-                      return ChoiceChip(
-                        label: Text(_label(tab)),
-                        selected: _tab == tab,
-                        onSelected: (_) => setState(() {
-                          _tab = tab;
-                          _selected = null;
-                          _review = null;
-                          _selectedNews = null;
-                          _newsReview = null;
-                        }),
-                      );
-                    },
-                  ),
+                const SizedBox(height: 12),
+                _AdminTabNavigation(
+                  tabs: tabs,
+                  selected: _tab,
+                  onSelected: _selectTab,
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   _AdminNotice(message: _error!),
                 ],
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
+                _AdminSectionHeader(info: tabInfo),
+                const SizedBox(height: 10),
                 if (_loading)
                   const Center(child: CircularProgressIndicator())
                 else
@@ -447,7 +420,7 @@ class _AdminScreenState extends State<AdminScreen> {
       tab: _tab,
       refreshToken: _operationsRefresh,
       isSuperAdmin: session.isSuperAdmin,
-      onOpenTab: (tab) => setState(() => _tab = tab),
+      onOpenTab: _selectTab,
     );
   }
 
@@ -456,7 +429,11 @@ class _AdminScreenState extends State<AdminScreen> {
         .where((item) => item.verification.status == 'pending')
         .toList();
     if (rows.isEmpty) {
-      return const Center(child: Text('No pending identity verifications.'));
+      return const _AdminEmptyState(
+        icon: Icons.verified_user_outlined,
+        title: 'Verification queue is clear',
+        message: 'There are no pending identity verifications right now.',
+      );
     }
     return ListView.separated(
       itemCount: rows.length,
@@ -540,9 +517,10 @@ class _AdminScreenState extends State<AdminScreen> {
         ),
         const SizedBox(height: 12),
         if (rows.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(34),
-            child: Center(child: Text('No stories in this moderation status.')),
+          const _AdminEmptyState(
+            icon: Icons.fact_check_outlined,
+            title: 'No matching stories',
+            message: 'Try another moderation status or search term.',
           )
         else
           for (final item in rows) ...[
@@ -1130,10 +1108,368 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  String _label(String value) => value
-      .split('-')
-      .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
-      .join(' ');
+}
+
+class _AdminTabInfo {
+  const _AdminTabInfo(this.label, this.description, this.icon);
+
+  final String label;
+  final String description;
+  final IconData icon;
+}
+
+_AdminTabInfo _adminTabInfo(String tab) => switch (tab) {
+      'overview' => const _AdminTabInfo(
+          'Overview',
+          'Monitor priority queues and recent administrative activity.',
+          Icons.space_dashboard_outlined,
+        ),
+      'verification' => const _AdminTabInfo(
+          'Identity verification',
+          'Review private identity evidence and reporter eligibility.',
+          Icons.verified_user_outlined,
+        ),
+      'news' => const _AdminTabInfo(
+          'News moderation',
+          'Review submitted stories, evidence, risk flags and publication status.',
+          Icons.fact_check_outlined,
+        ),
+      'revisions' => const _AdminTabInfo(
+          'Corrections',
+          'Compare published stories with reporter correction requests.',
+          Icons.change_circle_outlined,
+        ),
+      'reports' => const _AdminTabInfo(
+          'Content reports',
+          'Investigate reader reports against stories and comments.',
+          Icons.flag_outlined,
+        ),
+      'chat-reports' => const _AdminTabInfo(
+          'Chat reports',
+          'Review reported private messages and take account action.',
+          Icons.report_gmailerrorred_outlined,
+        ),
+      'appeals' => const _AdminTabInfo(
+          'Appeals',
+          'Resolve editorial and identity-verification appeals.',
+          Icons.gavel_outlined,
+        ),
+      'users' => const _AdminTabInfo(
+          'Users',
+          'Manage account access, trust, points and administrative roles.',
+          Icons.manage_accounts_outlined,
+        ),
+      'deletions' => const _AdminTabInfo(
+          'Deletion requests',
+          'Review retained account deletion requests and their audit context.',
+          Icons.person_remove_outlined,
+        ),
+      'withdrawals' => const _AdminTabInfo(
+          'Withdrawals',
+          'Review reporter payouts and audited wallet adjustments.',
+          Icons.payments_outlined,
+        ),
+      'categories' => const _AdminTabInfo(
+          'Categories',
+          'Maintain the newsroom category directory.',
+          Icons.category_outlined,
+        ),
+      'locations' => const _AdminTabInfo(
+          'Locations',
+          'Maintain countries, regions, cities and timezone data.',
+          Icons.location_city_outlined,
+        ),
+      'settings' => const _AdminTabInfo(
+          'System settings',
+          'Update protected JSON configuration for the platform.',
+          Icons.tune_rounded,
+        ),
+      'contact' => const _AdminTabInfo(
+          'Contact inbox',
+          'Read support, privacy and editorial messages from users.',
+          Icons.contact_mail_outlined,
+        ),
+      'audit' => const _AdminTabInfo(
+          'Audit log',
+          'Review recorded administrative actions and their reasons.',
+          Icons.history_rounded,
+        ),
+      _ => const _AdminTabInfo(
+          'Administration',
+          'Manage CitizenNews operations.',
+          Icons.admin_panel_settings_outlined,
+        ),
+    };
+
+class _AdminWorkspaceHeader extends StatelessWidget {
+  const _AdminWorkspaceHeader({
+    required this.superAdmin,
+    required this.loading,
+    required this.onRefresh,
+  });
+
+  final bool superAdmin;
+  final bool loading;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF101826), Color(0xFF26374D)],
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x26000000),
+              blurRadius: 24,
+              offset: Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Wrap(
+          spacing: 18,
+          runSpacing: 16,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          alignment: WrapAlignment.spaceBetween,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: AppColors.red.withValues(alpha: .18),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: const Icon(
+                      Icons.admin_panel_settings_outlined,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          superAdmin
+                              ? 'SUPER ADMIN ACCESS'
+                              : 'ADMIN ACCESS',
+                          style: const TextStyle(
+                            color: Color(0xFFFF8A8A),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Newsroom control center',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineLarge
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Moderation, safety, users and platform operations in one audited workspace.',
+                          style: TextStyle(
+                            color: Color(0xFFCBD5E1),
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: loading ? null : onRefresh,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                disabledForegroundColor: Colors.white38,
+                side: const BorderSide(color: Color(0xFF526175)),
+              ),
+              icon: loading
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+              label: const Text('Refresh workspace'),
+            ),
+          ],
+        ),
+      );
+}
+
+class _AdminTabNavigation extends StatelessWidget {
+  const _AdminTabNavigation({
+    required this.tabs,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<String> tabs;
+  final String selected;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: AppColors.paper,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: AppColors.border),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          height: 58,
+          child: ListView.separated(
+            padding: const EdgeInsets.all(6),
+            scrollDirection: Axis.horizontal,
+            itemCount: tabs.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 4),
+            itemBuilder: (context, index) {
+              final tab = tabs[index];
+              final info = _adminTabInfo(tab);
+              final active = selected == tab;
+              return Material(
+                color: active ? AppColors.red : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  onTap: () => onSelected(tab),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(
+                      children: [
+                        Icon(
+                          info.icon,
+                          size: 18,
+                          color: active ? Colors.white : AppColors.muted,
+                        ),
+                        const SizedBox(width: 7),
+                        Text(
+                          info.label,
+                          style: TextStyle(
+                            color: active ? Colors.white : AppColors.ink,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+}
+
+class _AdminSectionHeader extends StatelessWidget {
+  const _AdminSectionHeader({required this.info});
+
+  final _AdminTabInfo info;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: AppColors.red.withValues(alpha: .08),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(info.icon, color: AppColors.red, size: 21),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(info.label, style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 2),
+                Text(
+                  info.description,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+}
+
+class _AdminEmptyState extends StatelessWidget {
+  const _AdminEmptyState({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: .08),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: AppColors.success, size: 28),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: AppColors.muted),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 class _ContextGrid extends StatelessWidget {

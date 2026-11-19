@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/layout/app_breakpoints.dart';
 import '../../../core/ads/ads_scope.dart';
 import '../../../core/localization/app_localizations.dart';
+import '../../../core/navigation/app_navigation.dart';
 import '../../../core/theme/app_colors.dart';
 import '../domain/legal_content.dart';
 
@@ -32,20 +33,7 @@ class LegalScreen extends StatelessWidget {
                   90,
                 ),
                 children: [
-                  const Text(
-                    'CITIZENNEWS POLICY',
-                    style: TextStyle(
-                      color: AppColors.red,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    document.title,
-                    style: Theme.of(context).textTheme.headlineLarge,
-                  ),
+                  _LegalHeader(title: document.title, page: page),
                   const SizedBox(height: 22),
                   for (final section in document.sections)
                     _LegalSectionCard(section: section),
@@ -67,7 +55,7 @@ class LegalScreen extends StatelessWidget {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
-                      onPressed: () => context.go('/'),
+                      onPressed: () => context.backOr('/'),
                       icon: const Icon(Icons.arrow_back_rounded),
                       label: Text(context.tr('legal.back')),
                     ),
@@ -80,6 +68,87 @@ class LegalScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _LegalHeader extends StatelessWidget {
+  const _LegalHeader({required this.title, required this.page});
+
+  final String title;
+  final String page;
+
+  IconData get _icon => switch (page) {
+        'privacy' => Icons.privacy_tip_outlined,
+        'terms' => Icons.gavel_outlined,
+        'community-guidelines' => Icons.groups_outlined,
+        'editorial-policy' => Icons.fact_check_outlined,
+        'corrections-policy' => Icons.history_edu_outlined,
+        'copyright' => Icons.copyright_rounded,
+        'content-removal' => Icons.policy_outlined,
+        _ => Icons.info_outline_rounded,
+      };
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF101826), Color(0xFF26374D)],
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x26000000),
+              blurRadius: 24,
+              offset: Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: AppColors.red.withValues(alpha: .18),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(_icon, color: Colors.white, size: 27),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'CITIZENNEWS POLICY',
+                    style: TextStyle(
+                      color: Color(0xFFFF8A8A),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Clear standards for a safe, transparent and accountable news community.',
+                    style: TextStyle(color: Color(0xFFCBD5E1), height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class _LegalSectionCard extends StatelessWidget {

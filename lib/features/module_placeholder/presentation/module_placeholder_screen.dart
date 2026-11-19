@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
-import '../../../core/layout/app_breakpoints.dart';
+import '../../../core/navigation/app_navigation.dart';
 import '../../../core/theme/app_colors.dart';
 
 class ModulePlaceholderScreen extends StatelessWidget {
@@ -24,16 +25,25 @@ class ModulePlaceholderScreen extends StatelessWidget {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppBreakpoints.mobile),
+            constraints: const BoxConstraints(maxWidth: 620),
             child: Card(
+              clipBehavior: Clip.antiAlias,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 28,
-                  vertical: 48,
+                  vertical: 42,
                 ),
                 child: Column(
                   children: [
-                    Icon(icon, color: AppColors.red, size: 44),
+                    Container(
+                      width: 76,
+                      height: 76,
+                      decoration: BoxDecoration(
+                        color: AppColors.red.withValues(alpha: .08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, color: AppColors.red, size: 38),
+                    ),
                     const SizedBox(height: 20),
                     Text(
                       eyebrow,
@@ -54,7 +64,28 @@ class ModulePlaceholderScreen extends StatelessWidget {
                     Text(
                       description,
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppColors.muted,
+                            height: 1.5,
+                          ),
+                    ),
+                    const SizedBox(height: 22),
+                    Wrap(
+                      spacing: 9,
+                      runSpacing: 9,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: () => context.go('/'),
+                          icon: const Icon(Icons.home_outlined),
+                          label: const Text('Go to home'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => context.backOr('/'),
+                          icon: const Icon(Icons.arrow_back_rounded),
+                          label: const Text('Go back'),
+                        ),
+                      ],
                     ),
                   ],
                 ),

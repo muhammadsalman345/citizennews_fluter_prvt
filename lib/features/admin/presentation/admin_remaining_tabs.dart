@@ -622,7 +622,7 @@ class _AdminRemainingTabState extends State<AdminRemainingTab> {
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
-                onPressed: () => context.go('/news/${report.storySlug}'),
+                onPressed: () => context.push('/news/${report.storySlug}'),
                 icon: const Icon(Icons.open_in_new_rounded),
                 label: const Text('Open reported story'),
               ),
@@ -1097,14 +1097,45 @@ class _OpsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
     margin: const EdgeInsets.only(bottom: 10),
+    clipBehavior: Clip.antiAlias,
     child: Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 3),
-          Text(subtitle, style: const TextStyle(color: AppColors.muted)),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 4,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.red,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           if (children.isNotEmpty) const SizedBox(height: 12),
           ...children.expand((child) => [child, const SizedBox(height: 7)]),
         ],
@@ -1140,13 +1171,24 @@ class _OpsEmpty extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => Center(
+  Widget build(BuildContext context) => Card(
     child: Padding(
-      padding: const EdgeInsets.all(36),
-      child: Text(
-        message,
-        textAlign: TextAlign.center,
-        style: const TextStyle(color: AppColors.muted),
+      padding: const EdgeInsets.all(34),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.inbox_outlined,
+            size: 42,
+            color: AppColors.muted,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.muted),
+          ),
+        ],
       ),
     ),
   );
@@ -1176,7 +1218,15 @@ class _OpsStat extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Icon(icon, color: AppColors.red),
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.red.withValues(alpha: .08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: AppColors.red, size: 21),
+              ),
               const SizedBox(width: 11),
               Expanded(
                 child: Column(
@@ -1204,8 +1254,25 @@ class _StatusChip extends StatelessWidget {
   final String status;
 
   @override
-  Widget build(BuildContext context) =>
-      Chip(visualDensity: VisualDensity.compact, label: Text(_pretty(status)));
+  Widget build(BuildContext context) {
+    final color = switch (status) {
+      'active' || 'approved' || 'published' || 'resolved' || 'paid' =>
+        AppColors.success,
+      'pending' || 'investigating' || 'under_review' => AppColors.focus,
+      'rejected' || 'removed' || 'suspended' || 'inactive' => AppColors.red,
+      _ => AppColors.muted,
+    };
+    return Chip(
+      visualDensity: VisualDensity.compact,
+      avatar: Icon(Icons.circle, size: 9, color: color),
+      label: Text(
+        _pretty(status),
+        style: TextStyle(color: color, fontWeight: FontWeight.w700),
+      ),
+      backgroundColor: color.withValues(alpha: .07),
+      side: BorderSide(color: color.withValues(alpha: .2)),
+    );
+  }
 }
 
 class _NumberReasonDialog extends StatefulWidget {

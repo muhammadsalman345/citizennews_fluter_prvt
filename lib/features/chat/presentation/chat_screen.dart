@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/ads/ad_widgets.dart';
+import '../../../core/ads/ads_policy.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/presentation/auth_scope.dart';
@@ -518,7 +520,9 @@ class _ChatScreenState extends State<ChatScreen>
           person.conversationId ?? await repository.openConversation(person.id);
       final rooms = await repository.inbox();
       final room = _findRoom(rooms, roomId);
-      if (room == null) throw Exception('The conversation could not be opened.');
+      if (room == null) {
+        throw Exception('The conversation could not be opened.');
+      }
       if (!mounted) return;
       setState(() => _rooms = rooms);
       await _openRoom(room);
@@ -566,8 +570,14 @@ class _ChatScreenState extends State<ChatScreen>
     if (!_eligible) {
       return _EligibilityGate(error: _error, retry: _initialize);
     }
-    return LayoutBuilder(
-      builder: (context, constraints) {
+    return BackButtonListener(
+      onBackButtonPressed: () async {
+        if (_active == null) return false;
+        _closeRoom();
+        return true;
+      },
+      child: LayoutBuilder(
+        builder: (context, constraints) {
         final desktop = constraints.maxWidth >= 900;
         final showPageHeading = desktop || _active == null;
         return ColoredBox(
@@ -606,9 +616,13 @@ class _ChatScreenState extends State<ChatScreen>
                                     Expanded(child: _buildConversation()),
                                   ],
                                 )
-                              : (_active == null
-                                    ? _buildInbox()
-                                    : _buildConversation()),
+                              : IndexedStack(
+                                  index: _active == null ? 0 : 1,
+                                  children: [
+                                    _buildInbox(),
+                                    _buildConversation(),
+                                  ],
+                                ),
                         ),
                       ),
                     ),
@@ -618,12 +632,14 @@ class _ChatScreenState extends State<ChatScreen>
             ),
           ),
         );
-      },
+        },
+      ),
     );
   }
 
   Widget _buildInbox() {
     final rooms = _filteredRooms;
+    final unread = _rooms.fold<int>(0, (total, room) => total + room.unread);
     return Column(
       children: [
         Padding(
@@ -638,27 +654,29 @@ class _ChatScreenState extends State<ChatScreen>
                       'Your conversations',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 2),
-                    Row(
+                    const SizedBox(height: 3),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 3,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: _connected
-                                ? AppColors.success
-                                : AppColors.muted,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
+                        _InboxStatus(connected: _connected),
                         Text(
-                          _connected ? 'Live' : 'Connecting…',
+                          '${_rooms.length} conversation${_rooms.length == 1 ? '' : 's'}',
                           style: const TextStyle(
                             color: AppColors.muted,
                             fontSize: 12,
                           ),
                         ),
+                        if (unread > 0)
+                          Text(
+                            '• $unread unread',
+                            style: const TextStyle(
+                              color: AppColors.red,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                       ],
                     ),
                   ],
@@ -677,9 +695,16 @@ class _ChatScreenState extends State<ChatScreen>
           child: TextField(
             controller: _roomSearch,
             textInputAction: TextInputAction.search,
-            decoration: const InputDecoration(
-              hintText: 'Search name, @username or message',
-              prefixIcon: Icon(Icons.search_rounded),
+            decoration: InputDecoration(
+              hintText: 'Search conversations',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _roomSearch.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      onPressed: _roomSearch.clear,
+                      icon: const Icon(Icons.close_rounded, size: 19),
+                    ),
               isDense: true,
             ),
           ),
@@ -702,19 +727,40 @@ class _ChatScreenState extends State<ChatScreen>
                       ),
                     ],
                   )
-                : ListView.separated(
+                : ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    itemCount: rooms.length,
-                    separatorBuilder: (_, _) => const Divider(
-                      height: 1,
-                      indent: 76,
-                    ),
+                    itemCount:
+                        rooms.length +
+                        (rooms.length ~/ AdsPolicy.nativeAfterChatUsers),
                     itemBuilder: (context, index) {
-                      final room = rooms[index];
-                      return _RoomTile(
-                        room: room,
-                        selected: _active?.id == room.id,
-                        onTap: () => _openRoom(room),
+                      final cycleLength = AdsPolicy.nativeAfterChatUsers + 1;
+                      final position = index % cycleLength;
+                      final group = index ~/ cycleLength;
+                      if (position == AdsPolicy.nativeAfterChatUsers) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          child: CitizenNativeAd(
+                            key: ValueKey('chat-inbox-ad-$group'),
+                          ),
+                        );
+                      }
+                      final roomIndex =
+                          group * AdsPolicy.nativeAfterChatUsers + position;
+                      final room = rooms[roomIndex];
+                      return Column(
+                        children: [
+                          _RoomTile(
+                            key: ValueKey(room.id),
+                            room: room,
+                            selected: _active?.id == room.id,
+                            onTap: () => _openRoom(room),
+                          ),
+                          if (roomIndex != rooms.length - 1)
+                            const Divider(height: 1, indent: 76),
+                        ],
                       );
                     },
                   ),
@@ -739,58 +785,76 @@ class _ChatScreenState extends State<ChatScreen>
           room: room,
           busy: _busy,
           close: _closeRoom,
+          openProfile: () => context.push(
+            '/reporter/${Uri.encodeComponent(room.username)}',
+          ),
           toggleBlock: _toggleBlock,
         ),
         const Divider(height: 1),
         Expanded(
-          child: _historyLoading
-              ? const Center(child: CircularProgressIndicator())
-              : !_historyReady
-              ? const _EmptyState(
-                  icon: Icons.error_outline_rounded,
-                  title: 'Messages unavailable',
-                  message: 'Retry when your connection is available.',
-                )
-              : _messages.isEmpty
-              ? const _EmptyState(
-                  icon: Icons.waving_hand_outlined,
-                  title: 'Say hello',
-                  message:
-                      'Keep conversations respectful. Share only information you are comfortable sharing.',
-                )
-              : ListView.builder(
-                  controller: _messageScroll,
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-                  itemCount: _messages.length + (_hasOlder ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    if (_hasOlder && index == 0) {
-                      return Center(
-                        child: TextButton.icon(
-                          onPressed: _olderLoading ? null : _loadOlder,
-                          icon: _olderLoading
-                              ? const SizedBox.square(
-                                  dimension: 15,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.history_rounded),
-                          label: Text(
-                            _olderLoading
-                                ? 'Loading…'
-                                : 'Load earlier messages',
+          child: ColoredBox(
+            color: AppColors.surface,
+            child: _historyLoading
+                ? const Center(child: CircularProgressIndicator())
+                : !_historyReady
+                ? const _EmptyState(
+                    icon: Icons.error_outline_rounded,
+                    title: 'Messages unavailable',
+                    message: 'Retry when your connection is available.',
+                  )
+                : _messages.isEmpty
+                ? const _EmptyState(
+                    icon: Icons.waving_hand_outlined,
+                    title: 'Say hello',
+                    message:
+                        'Keep conversations respectful. Share only information you are comfortable sharing.',
+                  )
+                : ListView.builder(
+                    controller: _messageScroll,
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+                    itemCount: _messages.length + (_hasOlder ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (_hasOlder && index == 0) {
+                        return Center(
+                          child: TextButton.icon(
+                            onPressed: _olderLoading ? null : _loadOlder,
+                            icon: _olderLoading
+                                ? const SizedBox.square(
+                                    dimension: 15,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.history_rounded),
+                            label: Text(
+                              _olderLoading
+                                  ? 'Loading…'
+                                  : 'Load earlier messages',
+                            ),
                           ),
-                        ),
+                        );
+                      }
+                      final messageIndex = index - (_hasOlder ? 1 : 0);
+                      final message = _messages[messageIndex];
+                      final showDate = messageIndex == 0 ||
+                          !_sameDay(
+                            _messages[messageIndex - 1].createdAt,
+                            message.createdAt,
+                          );
+                      return Column(
+                        children: [
+                          if (showDate)
+                            _ChatDateDivider(date: message.createdAt),
+                          _MessageBubble(
+                            message: message,
+                            mine: message.senderId == _ownerId,
+                            report: () => _reportMessage(message),
+                          ),
+                        ],
                       );
-                    }
-                    final message = _messages[index - (_hasOlder ? 1 : 0)];
-                    return _MessageBubble(
-                      message: message,
-                      mine: message.senderId == _ownerId,
-                      report: () => _reportMessage(message),
-                    );
-                  },
-                ),
+                    },
+                  ),
+          ),
         ),
         if (!room.canSend)
           Container(
@@ -816,6 +880,32 @@ class _ChatScreenState extends State<ChatScreen>
   }
 }
 
+class _InboxStatus extends StatelessWidget {
+  const _InboxStatus({required this.connected});
+
+  final bool connected;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 7,
+        height: 7,
+        decoration: BoxDecoration(
+          color: connected ? AppColors.success : AppColors.muted,
+          shape: BoxShape.circle,
+        ),
+      ),
+      const SizedBox(width: 5),
+      Text(
+        connected ? 'Live' : 'Connecting…',
+        style: const TextStyle(color: AppColors.muted, fontSize: 12),
+      ),
+    ],
+  );
+}
+
 class _PageHeading extends StatelessWidget {
   const _PageHeading();
 
@@ -826,6 +916,19 @@ class _PageHeading extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
       child: Row(
         children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.red.withValues(alpha: .08),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.forum_rounded,
+              color: AppColors.red,
+            ),
+          ),
+          const SizedBox(width: 13),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -840,7 +943,7 @@ class _PageHeading extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Messages',
+                  'Private messages',
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
                 const Text(
@@ -865,6 +968,7 @@ class _RoomTile extends StatelessWidget {
     required this.room,
     required this.selected,
     required this.onTap,
+    super.key,
   });
 
   final ChatConversation room;
@@ -877,9 +981,20 @@ class _RoomTile extends StatelessWidget {
     child: InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        padding: EdgeInsets.fromLTRB(selected ? 12 : 16, 13, 16, 13),
         child: Row(
           children: [
+            if (selected) ...[
+              Container(
+                width: 3,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.red,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(width: 9),
+            ],
             _ChatAvatar(
               name: room.fullName,
               url: room.avatarUrl,
@@ -894,7 +1009,11 @@ class _RoomTile extends StatelessWidget {
                     room.fullName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      fontWeight: room.unread > 0
+                          ? FontWeight.w900
+                          : FontWeight.w800,
+                    ),
                   ),
                   Text(
                     '@${room.username}',
@@ -915,8 +1034,13 @@ class _RoomTile extends StatelessWidget {
                     style: TextStyle(
                       color: room.blockedByMe
                           ? AppColors.red
+                          : room.unread > 0
+                          ? AppColors.ink
                           : AppColors.muted,
                       fontSize: 13,
+                      fontWeight: room.unread > 0
+                          ? FontWeight.w700
+                          : FontWeight.w400,
                     ),
                   ),
                 ],
@@ -971,12 +1095,14 @@ class _ConversationHeader extends StatelessWidget {
     required this.room,
     required this.busy,
     required this.close,
+    required this.openProfile,
     required this.toggleBlock,
   });
 
   final ChatConversation room;
   final bool busy;
   final VoidCallback close;
+  final VoidCallback openProfile;
   final VoidCallback toggleBlock;
 
   @override
@@ -989,31 +1115,116 @@ class _ConversationHeader extends StatelessWidget {
           tooltip: 'Back to conversations',
           icon: const Icon(Icons.arrow_back_rounded),
         ),
-        _ChatAvatar(name: room.fullName, url: room.avatarUrl, radius: 21),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                room.fullName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              Text(
-                '@${room.username} · ${room.blockedByMe ? 'You blocked this member' : room.canSend ? 'Verified member' : 'Messaging unavailable'}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppColors.muted, fontSize: 12),
-              ),
-            ],
+        InkWell(
+          onTap: openProfile,
+          customBorder: const CircleBorder(),
+          child: _ChatAvatar(
+            name: room.fullName,
+            url: room.avatarUrl,
+            radius: 21,
           ),
         ),
-        TextButton(
-          onPressed: busy ? null : toggleBlock,
-          child: Text(room.blockedByMe ? 'Unblock' : 'Block'),
+        const SizedBox(width: 10),
+        Expanded(
+          child: InkWell(
+            onTap: openProfile,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          room.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.verified_rounded,
+                        size: 15,
+                        color: AppColors.focus,
+                      ),
+                    ],
+                  ),
+                  Text(
+                    '@${room.username} · ${room.blockedByMe ? 'You blocked this member' : room.canSend ? 'Verified member' : 'Messaging unavailable'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
+        PopupMenuButton<String>(
+          enabled: !busy,
+          tooltip: 'Conversation options',
+          onSelected: (_) => toggleBlock(),
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'block',
+              child: Row(
+                children: [
+                  Icon(
+                    room.blockedByMe
+                        ? Icons.lock_open_rounded
+                        : Icons.block_rounded,
+                    size: 19,
+                    color: room.blockedByMe
+                        ? AppColors.success
+                        : AppColors.red,
+                  ),
+                  const SizedBox(width: 9),
+                  Text(room.blockedByMe ? 'Unblock member' : 'Block member'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+class _ChatDateDivider extends StatelessWidget {
+  const _ChatDateDivider({required this.date});
+
+  final DateTime date;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    child: Row(
+      children: [
+        const Expanded(child: Divider()),
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+          decoration: BoxDecoration(
+            color: AppColors.paper,
+            border: Border.all(color: AppColors.border),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            _messageDay(date),
+            style: const TextStyle(
+              color: AppColors.muted,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const Expanded(child: Divider()),
       ],
     ),
   );
@@ -1549,9 +1760,39 @@ String _shortTime(DateTime value) {
   return '${value.day}/${value.month}';
 }
 
+bool _sameDay(DateTime first, DateTime second) =>
+    first.year == second.year &&
+    first.month == second.month &&
+    first.day == second.day;
+
+String _messageDay(DateTime value) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(value.year, value.month, value.day);
+  final difference = today.difference(day).inDays;
+  if (difference == 0) return 'Today';
+  if (difference == 1) return 'Yesterday';
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  return '${value.day} ${months[value.month - 1]} ${value.year}';
+}
+
 String _messageTime(DateTime value) {
-  final hour = value.hour == 0 ? 12 : (value.hour > 12 ? value.hour - 12 : value.hour);
+  final hour = value.hour == 0
+      ? 12
+      : (value.hour > 12 ? value.hour - 12 : value.hour);
   final period = value.hour >= 12 ? 'PM' : 'AM';
-  return '${value.day}/${value.month} · $hour:'
-      '${value.minute.toString().padLeft(2, '0')} $period';
+  return '$hour:${value.minute.toString().padLeft(2, '0')} $period';
 }

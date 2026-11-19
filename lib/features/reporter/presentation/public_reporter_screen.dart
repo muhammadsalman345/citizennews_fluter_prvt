@@ -274,7 +274,7 @@ class _PublicReporterScreenState extends State<PublicReporterScreen> {
                         if (!ownProfile && session.isSignedIn)
                           OutlinedButton.icon(
                             onPressed: () =>
-                                context.go('/messages/${data.reporter.id}'),
+                                context.push('/messages/${data.reporter.id}'),
                             icon: const Icon(Icons.chat_bubble_outline_rounded),
                             label: const Text('Message'),
                           ),

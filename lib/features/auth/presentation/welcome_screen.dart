@@ -71,11 +71,22 @@ class WelcomeScreen extends StatelessWidget {
                     children: [
                       FilledButton(
                         onPressed: () => context.go('/signup'),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(0, 48),
+                        ),
                         child: const Text('Create your account'),
                       ),
                       OutlinedButton(
+                        onPressed: () => context.go('/login'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 48),
+                        ),
+                        child: const Text('Sign in'),
+                      ),
+                      TextButton.icon(
                         onPressed: () => context.go('/'),
-                        child: const Text('Explore the news'),
+                        icon: const Icon(Icons.arrow_forward_rounded),
+                        label: const Text('Explore the news'),
                       ),
                     ],
                   ),

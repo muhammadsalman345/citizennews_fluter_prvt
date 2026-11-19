@@ -12,6 +12,7 @@ abstract final class AdsPolicy {
   static const appOpenDailyLimit = 1;
   static const appOpenMaxCache = Duration(hours: 4);
   static const nativeAfterStories = 3;
+  static const nativeAfterChatUsers = 3;
 
   static const _publicRoutes = {
     '/',
@@ -40,6 +41,16 @@ abstract final class AdsPolicy {
       _publicRoutes.contains(path) ||
       _publicPatterns.any((pattern) => pattern.hasMatch(path));
 
+  static bool isArticleRoute(String path) =>
+      RegExp(r'^/news/[^/]+$').hasMatch(path);
+
+  static bool isChatInboxRoute(String path) => path == '/messages';
+
+  static bool canShowInlineAdsOnRoute(String path) =>
+      isPublicDiscoveryRoute(path) ||
+      isArticleRoute(path) ||
+      isChatInboxRoute(path);
+
   static bool isAdSafeStory(NewsSummary story) =>
       const {'published', 'corrected'}.contains(story.status) &&
       !story.breaking &&
@@ -47,13 +58,22 @@ abstract final class AdsPolicy {
       _safeCategory.hasMatch(story.categorySlug ?? '');
 
   static bool canShowNativeAfter(List<NewsSummary> stories, int index) {
-    if (index < 0 ||
-        index >= stories.length ||
-        (index + 1) % nativeAfterStories != 0) {
-      return false;
+    return index >= 0 &&
+        index < stories.length &&
+        (index + 1) % nativeAfterStories == 0;
+  }
+
+  static bool canShowNativeAfterChatUser(int index) =>
+      index >= 0 && (index + 1) % nativeAfterChatUsers == 0;
+
+  /// Places one reliable inline banner near the top of a public feed while
+  /// keeping it away from breaking or otherwise ad-sensitive stories.
+  static bool canShowBannerAfter(List<NewsSummary> stories, int index) {
+    if (index < 0 || index >= stories.length || index > 2) return false;
+    if (!isAdSafeStory(stories[index])) return false;
+    for (var previous = 0; previous < index; previous++) {
+      if (isAdSafeStory(stories[previous])) return false;
     }
-    final start = index > 0 ? index - 1 : 0;
-    final end = index + 2 < stories.length ? index + 2 : stories.length;
-    return stories.sublist(start, end).every(isAdSafeStory);
+    return true;
   }
 }

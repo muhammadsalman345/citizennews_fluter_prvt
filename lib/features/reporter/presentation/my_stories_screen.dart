@@ -175,35 +175,93 @@ class _MyStoriesScreenState extends State<MyStoriesScreen> {
         ),
       );
 
-  Widget _header() => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'REPORTER WORKSPACE',
-                  style: TextStyle(
-                    color: AppColors.red,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.5,
+  Widget _header() => Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF101826), Color(0xFF202D41)],
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x26000000),
+              blurRadius: 24,
+              offset: Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Wrap(
+          spacing: 18,
+          runSpacing: 16,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: AppColors.red.withValues(alpha: .18),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: const Icon(
+                Icons.library_books_outlined,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'REPORTER NEWSROOM',
+                    style: TextStyle(
+                      color: Color(0xFFFF8A8A),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.5,
+                    ),
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'My stories',
+                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Track editorial status, update drafts and review the performance of your reporting.',
+                    style: TextStyle(color: Color(0xFFCBD5E1), height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => context.push('/dashboard'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Color(0xFF526175)),
+                  ),
+                  icon: const Icon(Icons.dashboard_outlined),
+                  label: const Text('Dashboard'),
                 ),
-                Text(
-                  'My stories',
-                  style: Theme.of(context).textTheme.headlineLarge,
+                FilledButton.icon(
+                  onPressed: () => context.push('/report-news'),
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('New story'),
                 ),
               ],
             ),
-          ),
-          FilledButton.icon(
-            onPressed: () => context.go('/report-news'),
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('Report news'),
-          ),
-        ],
+          ],
+        ),
       );
 
   Widget _storyCard(ReporterStory story) => Card(
@@ -271,7 +329,7 @@ class _MyStoriesScreenState extends State<MyStoriesScreen> {
                   if (story.canEdit)
                     OutlinedButton.icon(
                       onPressed: () =>
-                          context.go('/report-news/edit/${story.id}'),
+                          context.push('/report-news/edit/${story.id}'),
                       icon: const Icon(Icons.edit_note_rounded),
                       label: Text(
                         story.status == 'published' ||
@@ -282,13 +340,13 @@ class _MyStoriesScreenState extends State<MyStoriesScreen> {
                     ),
                   if (story.canView)
                     TextButton.icon(
-                      onPressed: () => context.go('/news/${story.slug}'),
+                      onPressed: () => context.push('/news/${story.slug}'),
                       icon: const Icon(Icons.open_in_new_rounded),
                       label: const Text('View story'),
                     ),
                   if (story.canView)
                     TextButton.icon(
-                      onPressed: () => context.go('/analytics/${story.id}'),
+                      onPressed: () => context.push('/analytics/${story.id}'),
                       icon: const Icon(Icons.insights_outlined),
                       label: const Text('Analytics'),
                     ),
@@ -342,14 +400,26 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final danger = status == 'rejected' || status == 'removed';
+    final (color, icon) = switch (status) {
+      'published' || 'corrected' => (AppColors.success, Icons.check_circle),
+      'pending' => (AppColors.focus, Icons.schedule_rounded),
+      'changes_requested' => (const Color(0xFFB66A00), Icons.edit_note_rounded),
+      'rejected' || 'removed' => (AppColors.red, Icons.error_outline_rounded),
+      'archived' => (AppColors.muted, Icons.archive_outlined),
+      _ => (AppColors.muted, Icons.circle),
+    };
     return Chip(
       avatar: Icon(
-        danger ? Icons.error_outline_rounded : Icons.circle,
-        size: danger ? 17 : 9,
-        color: danger ? AppColors.red : AppColors.focus,
+        icon,
+        size: icon == Icons.circle ? 9 : 17,
+        color: color,
       ),
-      label: Text(status.replaceAll('_', ' ')),
+      label: Text(
+        status.replaceAll('_', ' '),
+        style: TextStyle(color: color, fontWeight: FontWeight.w700),
+      ),
+      backgroundColor: color.withValues(alpha: .07),
+      side: BorderSide(color: color.withValues(alpha: .2)),
     );
   }
 }

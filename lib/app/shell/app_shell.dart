@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/layout/app_breakpoints.dart';
 import '../../core/ads/ads_scope.dart';
+import '../../core/navigation/app_navigation.dart';
 import '../../core/localization/app_localizations.dart';
 import '../../core/localization/language_picker.dart';
 import '../../core/network/network_controller.dart';
@@ -27,10 +30,20 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   NetworkController? _network;
   bool _wasOffline = false;
+  DateTime? _lastRootBackAt;
+
+  bool get _handlesAndroidSystemBack =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   bool _selected(String path) => path == '/'
       ? widget.location == '/'
       : widget.location == path || widget.location.startsWith('$path/');
+
+  @override
+  void didUpdateWidget(covariant AppShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.location != widget.location) _lastRootBackAt = null;
+  }
 
   @override
   void didChangeDependencies() {
@@ -54,9 +67,7 @@ class _AppShellState extends State<AppShell> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(content: Text(context.tr('network.restored'))),
-        );
+        ..showSnackBar(SnackBar(content: Text(context.tr('network.restored'))));
     });
   }
 
@@ -70,37 +81,114 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     final session = AuthScope.watch(context);
     final network = NetworkScope.watch(context);
+    final router = GoRouter.of(context);
+    final destination = AppNavigation.destinationFor(widget.location);
     AdsScope.read(context).setRoute(widget.location);
     return LayoutBuilder(
       builder: (context, constraints) {
         final mobile = constraints.maxWidth <= AppBreakpoints.mobile;
-        return Scaffold(
-          appBar: mobile
-              ? null
-              : _DesktopHeader(location: widget.location, session: session),
-          body: Column(
-            children: [
-              if (network.offline) const NetworkStatusBanner(),
-              Expanded(
-                child: network.offline
-                    ? MediaQuery.removePadding(
-                        context: context,
-                        removeTop: true,
-                        child: widget.child,
-                      )
-                    : widget.child,
-              ),
-            ],
+        return PopScope<Object?>(
+          canPop: router.canPop() || !_handlesAndroidSystemBack,
+          onPopInvokedWithResult: _handleSystemBack,
+          child: Scaffold(
+            appBar: mobile
+                ? destination.showMobileTopBar
+                      ? _MobilePageHeader(destination: destination)
+                      : null
+                : destination.showDesktopNavigation
+                ? _DesktopHeader(location: widget.location, session: session)
+                : null,
+            body: Column(
+              children: [
+                if (network.offline) const NetworkStatusBanner(),
+                Expanded(
+                  child: network.offline
+                      ? MediaQuery.removePadding(
+                          context: context,
+                          removeTop: true,
+                          child: widget.child,
+                        )
+                      : widget.child,
+                ),
+              ],
+            ),
+            bottomNavigationBar: mobile && destination.showBottomNavigation
+                ? _MobileTabs(
+                    location: widget.location,
+                    selected: _selected,
+                    session: session,
+                  )
+                : null,
           ),
-          bottomNavigationBar: mobile
-              ? _MobileTabs(
-                  location: widget.location,
-                  selected: _selected,
-                  session: session,
-                )
-              : null,
         );
       },
+    );
+  }
+
+  void _handleSystemBack(bool didPop, Object? result) {
+    if (didPop || !mounted) return;
+    final router = GoRouter.of(context);
+    if (router.canPop()) {
+      router.pop();
+      return;
+    }
+
+    final destination = AppNavigation.destinationFor(widget.location);
+    if (!destination.isPrimaryRoot) {
+      router.go(destination.fallback);
+      return;
+    }
+    if (widget.location != AppNavigation.home) {
+      router.go(AppNavigation.home);
+      return;
+    }
+
+    final now = DateTime.now();
+    final previous = _lastRootBackAt;
+    if (previous != null &&
+        now.difference(previous) <= const Duration(seconds: 2)) {
+      SystemNavigator.pop();
+      return;
+    }
+    _lastRootBackAt = now;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Press back again to exit'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+  }
+}
+
+class _MobilePageHeader extends StatelessWidget implements PreferredSizeWidget {
+  const _MobilePageHeader({required this.destination});
+
+  final AppDestination destination;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(56);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      leading: IconButton(
+        tooltip: 'Back',
+        onPressed: () => context.backOr(destination.fallback),
+        icon: const Icon(Icons.arrow_back_rounded),
+      ),
+      titleSpacing: 0,
+      title: Text(
+        destination.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+      ),
+      bottom: const PreferredSize(
+        preferredSize: Size.fromHeight(1),
+        child: Divider(height: 1, color: AppColors.border),
+      ),
     );
   }
 }
@@ -120,13 +208,27 @@ class _DesktopHeader extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    final destination = AppNavigation.destinationFor(location);
     return AppBar(
       toolbarHeight: 88,
       titleSpacing: 40,
-      title: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => context.go('/'),
-        child: const CitizenNewsBrand(),
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (destination.showMobileTopBar) ...[
+            IconButton(
+              tooltip: 'Back',
+              onPressed: () => context.backOr(destination.fallback),
+              icon: const Icon(Icons.arrow_back_rounded),
+            ),
+            const SizedBox(width: 8),
+          ],
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => context.go('/'),
+            child: const CitizenNewsBrand(),
+          ),
+        ],
       ),
       bottom: const PreferredSize(
         preferredSize: Size.fromHeight(1),

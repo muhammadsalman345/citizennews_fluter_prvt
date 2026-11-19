@@ -46,6 +46,10 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
 
   InterstitialAd? _interstitial;
   AppOpenAd? _appOpen;
+  Timer? _interstitialRetryTimer;
+  Timer? _appOpenRetryTimer;
+  int _interstitialFailures = 0;
+  int _appOpenFailures = 0;
 
   bool get supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -68,7 +72,7 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
       !_fullScreen &&
       !adFree &&
       !trafficProtected &&
-      AdsPolicy.isPublicDiscoveryRoute(_route);
+      AdsPolicy.canShowInlineAdsOnRoute(_route);
 
   /// Push/deep-link or other sensitive flows can temporarily suppress ads.
   void setBlocked(bool blocked) {
@@ -104,8 +108,6 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
       await MobileAds.instance.initialize();
       _available = true;
       _started = true;
-      _loadInterstitial();
-      _loadAppOpen();
     } catch (error) {
       _available = false;
       _message = 'AdMob could not start. Check the network and consent setup.';
@@ -147,7 +149,8 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
       _privacyRequired = false;
       return;
     }
-    _privacyRequired = await ConsentInformation.instance
+    _privacyRequired =
+        await ConsentInformation.instance
             .getPrivacyOptionsRequirementStatus() ==
         PrivacyOptionsRequirementStatus.required;
   }
@@ -177,7 +180,8 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
 
   void setRoute(String route) {
     if (_route == route) return;
-    final leftQualifiedArticle = _route.startsWith('/news/') && _articleQualified;
+    final leftQualifiedArticle =
+        _route.startsWith('/news/') && _articleQualified;
     _articleTimer?.cancel();
     _route = route;
     _articleQualified = false;
@@ -190,28 +194,52 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
       _articleTimer = Timer(AdsPolicy.qualifyingReadTime, () {
         if (_route.startsWith('/news/')) _articleQualified = true;
       });
+      if (_qualifiedArticles >= AdsPolicy.articlesBetweenInterstitials - 1) {
+        _loadInterstitial();
+      }
     }
   }
 
   void _loadInterstitial() {
-    if (!_available || _interstitial != null) return;
+    _resetDailyCounters();
+    if (!_shouldPrepareInterstitial || _interstitial != null) return;
     InterstitialAd.load(
       adUnitId: activeAdUnits.interstitial,
       request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
-        onAdLoaded: (ad) => _interstitial = ad,
+        onAdLoaded: (ad) {
+          _interstitialFailures = 0;
+          _interstitialRetryTimer?.cancel();
+          _interstitialRetryTimer = null;
+          _interstitial = ad;
+          if (_qualifiedArticles >= AdsPolicy.articlesBetweenInterstitials &&
+              AdsPolicy.isPublicDiscoveryRoute(_route)) {
+            unawaited(_maybeShowInterstitial());
+          }
+        },
         onAdFailedToLoad: (error) {
           _interstitial = null;
           debugPrint('[CitizenNews AdMob] interstitial load failed: $error');
+          _scheduleInterstitialRetry();
         },
       ),
     );
   }
 
+  void _scheduleInterstitialRetry() {
+    if (!_shouldPrepareInterstitial || _interstitialRetryTimer != null) return;
+    _interstitialFailures++;
+    _interstitialRetryTimer = Timer(_retryDelay(_interstitialFailures), () {
+      _interstitialRetryTimer = null;
+      _loadInterstitial();
+    });
+  }
+
   Future<void> _maybeShowInterstitial() async {
     _resetDailyCounters();
     final now = DateTime.now();
-    final cooldownPassed = _lastInterstitial == null ||
+    final cooldownPassed =
+        _lastInterstitial == null ||
         now.difference(_lastInterstitial!) >= AdsPolicy.interstitialCooldown;
     if (!_available ||
         adFree ||
@@ -222,7 +250,6 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
         _qualifiedArticles < AdsPolicy.articlesBetweenInterstitials ||
         _dailyInterstitials >= AdsPolicy.interstitialDailyLimit ||
         !cooldownPassed) {
-      _loadInterstitial();
       return;
     }
     final ad = _interstitial;
@@ -242,13 +269,11 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
       onAdDismissedFullScreenContent: (ad) {
         ad.dispose();
         _finishFullScreen();
-        _loadInterstitial();
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
         ad.dispose();
         debugPrint('[CitizenNews AdMob] interstitial show failed: $error');
         _finishFullScreen();
-        _loadInterstitial();
       },
     );
     ad.show();
@@ -293,9 +318,7 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
             onUserEarnedReward: (_, reward) {
               if (reward.amount <= 0) return;
               rewardEarned = true;
-              _adFreeUntil = DateTime.now().add(
-                AdsPolicy.rewardedAdFreeTime,
-              );
+              _adFreeUntil = DateTime.now().add(AdsPolicy.rewardedAdFreeTime);
               _scheduleAdFreeExpiry();
               unawaited(_persist());
               notifyListeners();
@@ -315,8 +338,20 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _loadAppOpen() {
+    _resetDailyCounters();
+    final now = DateTime.now();
+    final cooldownPassed =
+        _lastAppOpen == null ||
+        now.difference(_lastAppOpen!) >= AdsPolicy.appOpenCooldown;
     if (!_available ||
+        _backgroundAt == null ||
         _sessions < AdsPolicy.appOpenMinimumSessions ||
+        adFree ||
+        trafficProtected ||
+        _blocked ||
+        _fullScreen ||
+        _dailyAppOpen >= AdsPolicy.appOpenDailyLimit ||
+        !cooldownPassed ||
         _appOpen != null) {
       return;
     }
@@ -325,22 +360,47 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
       request: const AdRequest(),
       adLoadCallback: AppOpenAdLoadCallback(
         onAdLoaded: (ad) {
+          _appOpenFailures = 0;
+          _appOpenRetryTimer?.cancel();
+          _appOpenRetryTimer = null;
           _appOpen = ad;
           _appOpenLoadedAt = DateTime.now();
         },
         onAdFailedToLoad: (error) {
           _appOpen = null;
           debugPrint('[CitizenNews AdMob] app-open load failed: $error');
+          _scheduleAppOpenRetry();
         },
       ),
     );
   }
+
+  void _scheduleAppOpenRetry() {
+    if (!_available || _backgroundAt == null || _appOpenRetryTimer != null) {
+      return;
+    }
+    _appOpenFailures++;
+    _appOpenRetryTimer = Timer(_retryDelay(_appOpenFailures), () {
+      _appOpenRetryTimer = null;
+      _loadAppOpen();
+    });
+  }
+
+  Duration _retryDelay(int failures) => switch (failures) {
+    <= 1 => const Duration(seconds: 30),
+    2 => const Duration(minutes: 1),
+    3 => const Duration(minutes: 2),
+    4 => const Duration(minutes: 4),
+    _ => const Duration(minutes: 5),
+  };
 
   Future<void> _maybeShowAppOpen() async {
     _resetDailyCounters();
     final now = DateTime.now();
     final backgroundAt = _backgroundAt;
     _backgroundAt = null;
+    _appOpenRetryTimer?.cancel();
+    _appOpenRetryTimer = null;
     final loadedAt = _appOpenLoadedAt;
     if (loadedAt != null &&
         now.difference(loadedAt) >= AdsPolicy.appOpenMaxCache) {
@@ -348,9 +408,11 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
       _appOpen = null;
       _appOpenLoadedAt = null;
     }
-    final cooldownPassed = _lastAppOpen == null ||
+    final cooldownPassed =
+        _lastAppOpen == null ||
         now.difference(_lastAppOpen!) >= AdsPolicy.appOpenCooldown;
-    final backgroundQualified = backgroundAt != null &&
+    final backgroundQualified =
+        backgroundAt != null &&
         now.difference(backgroundAt) >= AdsPolicy.appOpenMinimumBackground;
     final ad = _appOpen;
     if (!_available ||
@@ -363,7 +425,6 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
         !backgroundQualified ||
         !cooldownPassed ||
         _dailyAppOpen >= AdsPolicy.appOpenDailyLimit) {
-      _loadAppOpen();
       return;
     }
     _appOpen = null;
@@ -378,13 +439,11 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
       onAdDismissedFullScreenContent: (ad) {
         ad.dispose();
         _finishFullScreen();
-        _loadAppOpen();
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
         ad.dispose();
         debugPrint('[CitizenNews AdMob] app-open show failed: $error');
         _finishFullScreen();
-        _loadAppOpen();
       },
     );
     ad.show();
@@ -415,9 +474,9 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused) {
       _backgroundAt ??= DateTime.now();
+      _loadAppOpen();
     } else if (state == AppLifecycleState.resumed) {
       unawaited(_maybeShowAppOpen());
     }
@@ -435,14 +494,25 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  bool get _shouldPrepareInterstitial =>
+      _available &&
+      !adFree &&
+      !trafficProtected &&
+      !_blocked &&
+      !_fullScreen &&
+      _qualifiedArticles >= AdsPolicy.articlesBetweenInterstitials - 1 &&
+      _dailyInterstitials < AdsPolicy.interstitialDailyLimit;
+
   String _dayKey(DateTime value) =>
       '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
 
   Future<void> _restore() async {
     final preferences = await SharedPreferences.getInstance();
     _qualifiedArticles = preferences.getInt('${_prefix}articles') ?? 0;
-    _dailyInterstitials = preferences.getInt('${_prefix}interstitial-count') ?? 0;
-    _interstitialDay = preferences.getString('${_prefix}interstitial-day') ?? '';
+    _dailyInterstitials =
+        preferences.getInt('${_prefix}interstitial-count') ?? 0;
+    _interstitialDay =
+        preferences.getString('${_prefix}interstitial-day') ?? '';
     _sessions = preferences.getInt('${_prefix}sessions') ?? 0;
     _dailyAppOpen = preferences.getInt('${_prefix}app-open-count') ?? 0;
     _appOpenDay = preferences.getString('${_prefix}app-open-day') ?? '';
@@ -518,6 +588,8 @@ class AdsController extends ChangeNotifier with WidgetsBindingObserver {
     _articleTimer?.cancel();
     _adFreeTimer?.cancel();
     _trafficProtectionTimer?.cancel();
+    _interstitialRetryTimer?.cancel();
+    _appOpenRetryTimer?.cancel();
     _interstitial?.dispose();
     _appOpen?.dispose();
     super.dispose();

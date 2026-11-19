@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class AdUnits {
   const AdUnits({
     required this.banner,
@@ -16,11 +18,11 @@ class AdUnits {
   final String appOpen;
 }
 
-/// Demo mode stays on unless a production build explicitly sets
-/// `--dart-define=ADMOB_USE_TEST_ADS=false`.
+/// Debug/profile builds are safe by default while release builds use the
+/// publisher units. The environment flag can still override either mode.
 const useTestAds = bool.fromEnvironment(
   'ADMOB_USE_TEST_ADS',
-  defaultValue: true,
+  defaultValue: !kReleaseMode,
 );
 
 const googleAndroidTestAdUnits = AdUnits(

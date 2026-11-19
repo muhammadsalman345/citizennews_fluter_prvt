@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/ads/ad_widgets.dart';
+import '../../../core/ads/ads_policy.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/layout/app_breakpoints.dart';
 import '../../../core/theme/app_colors.dart';
@@ -34,6 +36,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
 
   final _comment = TextEditingController();
   final _gallery = PageController();
+  final _commentsKey = GlobalKey();
   NewsRepository? _repository;
   NewsArticle? _article;
   List<NewsComment> _comments = const [];
@@ -365,6 +368,17 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     );
   }
 
+  void _scrollToComments() {
+    final commentsContext = _commentsKey.currentContext;
+    if (commentsContext == null) return;
+    Scrollable.ensureVisible(
+      commentsContext,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+      alignment: .05,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
@@ -386,82 +400,81 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
         children: [
           Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 980),
+              constraints: const BoxConstraints(maxWidth: 860),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  TextButton.icon(
-                    onPressed: () => context.go('/'),
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    label: const Text('Back to news'),
-                    style: TextButton.styleFrom(
-                      alignment: Alignment.centerLeft,
-                    ),
-                  ),
-                  if (article.images.isNotEmpty) _galleryView(article),
-                  const SizedBox(height: 18),
                   Wrap(
                     spacing: 9,
+                    runSpacing: 8,
                     children: [
-                      InkWell(
+                      _ArticleTag(
+                        label: story.category.toUpperCase(),
+                        color: AppColors.red,
                         onTap: story.categorySlug?.isNotEmpty == true
-                            ? () => context.go(
+                            ? () => context.push(
                                 '/category/${Uri.encodeComponent(story.categorySlug!)}',
                               )
                             : null,
-                        child: Text(
-                          story.category.toUpperCase(),
-                          style: const TextStyle(
-                            color: AppColors.red,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
                       ),
-                      InkWell(
+                      _ArticleTag(
+                        label: story.city,
+                        color: AppColors.focus,
                         onTap:
                             story.countrySlug?.isNotEmpty == true &&
                                 story.citySlug?.isNotEmpty == true
-                            ? () => context.go(
+                            ? () => context.push(
                                 '/city/${Uri.encodeComponent(story.countrySlug!)}/${Uri.encodeComponent(story.citySlug!)}',
                               )
                             : null,
-                        child: Text(
-                          story.city,
-                          style: const TextStyle(color: AppColors.muted),
-                        ),
                       ),
                       if (story.breaking)
-                        const Text(
-                          'BREAKING',
-                          style: TextStyle(
-                            color: AppColors.red,
-                            fontWeight: FontWeight.w800,
-                          ),
+                        const _ArticleTag(
+                          label: 'BREAKING',
+                          color: AppColors.red,
+                        ),
+                      if (story.corrected)
+                        const _ArticleTag(
+                          label: 'CORRECTED',
+                          color: AppColors.focus,
                         ),
                     ],
                   ),
-                  const SizedBox(height: 9),
+                  const SizedBox(height: 14),
                   Text(
                     story.headline,
                     style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                      fontSize: mobile ? 36 : 54,
+                      fontSize: mobile ? 34 : 50,
+                      height: 1.1,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   Text(
                     story.summary,
                     style: const TextStyle(
-                      fontSize: 18,
-                      height: 1.5,
+                      fontSize: 17,
+                      height: 1.55,
                       color: AppColors.muted,
                     ),
                   ),
+                  const SizedBox(height: 18),
+                  _articleByline(story),
+                  if (article.images.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    _galleryView(article),
+                  ],
+                  const SizedBox(height: 14),
+                  _actions(story),
                   if (article.correctionNote?.isNotEmpty == true) ...[
                     const SizedBox(height: 16),
                     _CorrectionNotice(note: article.correctionNote!),
                   ],
                   const SizedBox(height: 22),
                   _ArticleBody(body: article.body),
+                  if (AdsPolicy.isAdSafeStory(story)) ...[
+                    const SizedBox(height: 22),
+                    const CitizenBannerAd(),
+                  ],
                   if (article.source.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _InfoBox(label: 'Source / evidence', value: article.source),
@@ -481,12 +494,29 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                   ],
                   const SizedBox(height: 18),
                   _reporterCard(story),
-                  const SizedBox(height: 14),
-                  _actions(story),
                   const SizedBox(height: 30),
-                  Text(
-                    'Comments (${story.comments})',
-                    style: Theme.of(context).textTheme.headlineLarge,
+                  Row(
+                    key: _commentsKey,
+                    children: [
+                      const Icon(
+                        Icons.forum_outlined,
+                        color: AppColors.red,
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          'Conversation',
+                          style: Theme.of(context).textTheme.headlineLarge,
+                        ),
+                      ),
+                      Text(
+                        '${story.comments} comments',
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 14),
                   _commentComposer(),
@@ -516,8 +546,75 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     );
   }
 
-  Widget _galleryView(NewsArticle article) => SizedBox(
-    height: 430,
+  Widget _articleByline(NewsSummary story) => Row(
+    children: [
+      InkWell(
+        customBorder: const CircleBorder(),
+        onTap: story.username.isEmpty
+            ? null
+            : () => context.push(
+                '/reporter/${Uri.encodeComponent(story.username)}',
+              ),
+        child: CircleAvatar(
+          radius: 23,
+          backgroundColor: AppColors.surface,
+          backgroundImage: story.avatarUrl?.isNotEmpty == true
+              ? NetworkImage(story.avatarUrl!)
+              : null,
+          child: story.avatarUrl?.isNotEmpty == true
+              ? null
+              : Text(
+                  story.fullName.isEmpty ? 'C' : story.fullName[0],
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+        ),
+      ),
+      const SizedBox(width: 11),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    story.fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (story.verified) ...[
+                  const SizedBox(width: 4),
+                  const Icon(
+                    Icons.verified_rounded,
+                    size: 16,
+                    color: AppColors.focus,
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${_date(story.publishedAt)} · ${story.views} views',
+              style: const TextStyle(color: AppColors.muted, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+      IconButton(
+        tooltip: 'Share story',
+        onPressed: _share,
+        icon: const Icon(Icons.ios_share_rounded),
+      ),
+    ],
+  );
+
+  Widget _galleryView(NewsArticle article) => AspectRatio(
+    aspectRatio: 16 / 9,
     child: Stack(
       children: [
         PageView.builder(
@@ -529,6 +626,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
             child: Image.network(
               article.images[index],
               width: double.infinity,
+              height: double.infinity,
               fit: BoxFit.cover,
               errorBuilder: (_, _, _) => const ColoredBox(
                 color: AppColors.surface,
@@ -553,18 +651,23 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
 
   Widget _reporterCard(NewsSummary story) => Card(
     child: Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       child: Row(
         children: [
           CircleAvatar(
-            backgroundImage: story.avatarUrl == null
+            radius: 26,
+            backgroundColor: AppColors.surface,
+            backgroundImage: story.avatarUrl?.isNotEmpty != true
                 ? null
                 : NetworkImage(story.avatarUrl!),
-            child: story.avatarUrl == null
-                ? Text(story.fullName.isEmpty ? 'R' : story.fullName[0])
+            child: story.avatarUrl?.isNotEmpty != true
+                ? Text(
+                    story.fullName.isEmpty ? 'C' : story.fullName[0],
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  )
                 : null,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 13),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -572,23 +675,49 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                 InkWell(
                   onTap: story.username.isEmpty
                       ? null
-                      : () => context.go(
+                      : () => context.push(
                           '/reporter/${Uri.encodeComponent(story.username)}',
                         ),
-                  child: Text(
-                    '${story.fullName}${story.verified ? ' - verified reporter' : ''}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      decoration: TextDecoration.underline,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          story.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      if (story.verified) ...[
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.verified_rounded,
+                          size: 16,
+                          color: AppColors.focus,
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                Text('@${story.username} - ${_date(story.publishedAt)}'),
+                const SizedBox(height: 2),
+                Text(
+                  '@${story.username} · Community reporter',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                ),
               ],
             ),
           ),
           OutlinedButton(
             onPressed: _busy ? null : _follow,
+            style: _following
+                ? OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.success,
+                    side: const BorderSide(color: AppColors.success),
+                  )
+                : null,
             child: Text(_following ? 'Following' : 'Follow'),
           ),
         ],
@@ -596,39 +725,56 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     ),
   );
 
-  Widget _actions(NewsSummary story) => Wrap(
-    spacing: 8,
-    runSpacing: 8,
-    children: [
-      _ActionButton(
-        icon: Icons.thumb_up_outlined,
-        label: '${story.likes}',
-        selected: _reaction == 1,
-        onTap: _busy ? null : () => _react(1),
+  Widget _actions(NewsSummary story) => Card(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          _ActionButton(
+            icon: _reaction == 1
+                ? Icons.thumb_up_rounded
+                : Icons.thumb_up_outlined,
+            label: '${story.likes}',
+            selected: _reaction == 1,
+            onTap: _busy ? null : () => _react(1),
+          ),
+          _ActionButton(
+            icon: _reaction == -1
+                ? Icons.thumb_down_rounded
+                : Icons.thumb_down_outlined,
+            label: '${story.dislikes}',
+            selected: _reaction == -1,
+            onTap: _busy ? null : () => _react(-1),
+          ),
+          _ActionButton(
+            icon: Icons.chat_bubble_outline_rounded,
+            label: '${story.comments}',
+            onTap: _scrollToComments,
+          ),
+          _ActionButton(
+            icon: _saved
+                ? Icons.bookmark_rounded
+                : Icons.bookmark_border_rounded,
+            label: _saved ? 'Saved' : 'Save',
+            selected: _saved,
+            onTap: _busy ? null : _bookmark,
+          ),
+          _ActionButton(
+            icon: Icons.share_outlined,
+            label: 'Share',
+            onTap: _share,
+          ),
+          _ActionButton(
+            icon: Icons.flag_outlined,
+            label: 'Report',
+            onTap: _busy ? null : _reportStory,
+          ),
+        ],
       ),
-      _ActionButton(
-        icon: Icons.thumb_down_outlined,
-        label: '${story.dislikes}',
-        selected: _reaction == -1,
-        onTap: _busy ? null : () => _react(-1),
-      ),
-      _ActionButton(
-        icon: _saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-        label: _saved ? 'Saved' : 'Save',
-        selected: _saved,
-        onTap: _busy ? null : _bookmark,
-      ),
-      _ActionButton(icon: Icons.share_outlined, label: 'Share', onTap: _share),
-      _ActionButton(
-        icon: Icons.flag_outlined,
-        label: 'Report',
-        onTap: _busy ? null : _reportStory,
-      ),
-      Chip(
-        avatar: const Icon(Icons.visibility_outlined, size: 17),
-        label: Text('${story.views} views'),
-      ),
-    ],
+    ),
   );
 
   Widget _commentComposer() {
@@ -703,19 +849,57 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      comment.fullName,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: AppColors.surface,
+                          backgroundImage: comment.avatarUrl?.isNotEmpty == true
+                              ? NetworkImage(comment.avatarUrl!)
+                              : null,
+                          child: comment.avatarUrl?.isNotEmpty == true
+                              ? null
+                              : Text(
+                                  comment.fullName.isEmpty
+                                      ? 'R'
+                                      : comment.fullName[0],
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                comment.fullName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                _date(comment.createdAt),
+                                style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 10),
                     Text(
-                      _date(comment.createdAt),
+                      comment.body,
                       style: const TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 11,
+                        color: AppColors.ink,
+                        height: 1.5,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(comment.body),
                     const SizedBox(height: 5),
                     Wrap(
                       spacing: 8,
@@ -756,6 +940,36 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
         '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
+}
+
+class _ArticleTag extends StatelessWidget {
+  const _ArticleTag({required this.label, required this.color, this.onTap});
+
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: color.withValues(alpha: .08),
+    borderRadius: BorderRadius.circular(999),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            letterSpacing: .45,
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class _ArticleBody extends StatelessWidget {
@@ -903,16 +1117,18 @@ class _ActionButton extends StatelessWidget {
   final VoidCallback? onTap;
   final bool selected;
   @override
-  Widget build(BuildContext context) => OutlinedButton.icon(
+  Widget build(BuildContext context) => TextButton.icon(
     onPressed: onTap,
-    icon: Icon(icon),
+    icon: Icon(icon, size: 19),
     label: Text(label),
-    style: selected
-        ? OutlinedButton.styleFrom(
-            foregroundColor: AppColors.red,
-            side: const BorderSide(color: AppColors.red),
-          )
-        : null,
+    style: TextButton.styleFrom(
+      foregroundColor: selected ? AppColors.red : AppColors.muted,
+      backgroundColor: selected
+          ? AppColors.red.withValues(alpha: .07)
+          : Colors.transparent,
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+      textStyle: const TextStyle(fontWeight: FontWeight.w700),
+    ),
   );
 }
 

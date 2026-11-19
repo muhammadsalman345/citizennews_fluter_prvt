@@ -395,24 +395,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'REPORTER VERIFICATION',
-            style: TextStyle(
-              color: AppColors.red,
-              fontWeight: FontWeight.w800,
-              fontSize: 11,
-              letterSpacing: 1.5,
-            ),
-          ),
-          const SizedBox(height: 7),
-          Text(
-            'Verify your identity',
-            style: Theme.of(context).textTheme.headlineLarge,
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Your documents stay private and are available only to authorised reviewers.',
-          ),
+          const _VerificationHeader(),
           const SizedBox(height: 22),
           _Section(
             number: 1,
@@ -621,6 +604,77 @@ class _VerificationScreenState extends State<VerificationScreen> {
       ),
     );
   }
+}
+
+class _VerificationHeader extends StatelessWidget {
+  const _VerificationHeader();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF101826), Color(0xFF26374D)],
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x26000000),
+              blurRadius: 24,
+              offset: Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: AppColors.red.withValues(alpha: .18),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.verified_user_outlined,
+                color: Colors.white,
+                size: 27,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'REPORTER VERIFICATION',
+                    style: TextStyle(
+                      color: Color(0xFFFF8A8A),
+                      fontWeight: FontWeight.w900,
+                      fontSize: 10,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Verify your identity',
+                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Your documents stay private and are available only to authorised reviewers.',
+                    style: TextStyle(color: Color(0xFFCBD5E1), height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class _Section extends StatelessWidget {

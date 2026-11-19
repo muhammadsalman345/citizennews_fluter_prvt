@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/layout/app_breakpoints.dart';
 import '../../../core/localization/app_localizations.dart';
+import '../../../core/navigation/app_navigation.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/presentation/auth_scope.dart';
 import '../data/contact_repository.dart';
@@ -103,34 +104,31 @@ class _ContactScreenState extends State<ContactScreen> {
                 90,
               ),
               children: [
-                const Text(
-                  'TALK TO THE NEWSROOM',
-                  style: TextStyle(
-                    color: AppColors.red,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Contact CitizenNews',
-                  style: Theme.of(context).textTheme.headlineLarge,
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'For an article correction or safety issue, use the report button on the story. For general questions, leave a message for the editorial team.',
-                  style: TextStyle(color: AppColors.muted, height: 1.5),
-                ),
+                const _ContactHeader(),
                 const SizedBox(height: 8),
-                const Text(
-                  'Use this form for account support, privacy questions and editorial enquiries. Include the relevant article link or username so the team can identify your concern. Do not include passwords, payment credentials or identity-document images in your message.',
-                  style: TextStyle(height: 1.5),
+                const _ContactGuidance(),
+                const SizedBox(height: 10),
+                const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.shield_outlined,
+                      color: AppColors.muted,
+                      size: 18,
+                    ),
+                    SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        'Never include passwords, payment details or identity images.',
+                        style: TextStyle(color: AppColors.muted, fontSize: 12),
+                      ),
+                    ),
+                  ],
                 ),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton(
-                    onPressed: () => context.go('/privacy'),
+                    onPressed: () => context.push('/privacy'),
                     child: const Text('Read the privacy policy'),
                   ),
                 ),
@@ -259,7 +257,7 @@ class _ContactScreenState extends State<ContactScreen> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    onPressed: () => context.go('/'),
+                    onPressed: () => context.backOr('/'),
                     icon: const Icon(Icons.arrow_back_rounded),
                     label: Text(context.tr('legal.back')),
                   ),
@@ -271,6 +269,104 @@ class _ContactScreenState extends State<ContactScreen> {
       ),
     );
   }
+}
+
+class _ContactHeader extends StatelessWidget {
+  const _ContactHeader();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF101826), Color(0xFF26374D)],
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x26000000),
+              blurRadius: 24,
+              offset: Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: AppColors.red.withValues(alpha: .18),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.mark_email_unread_outlined,
+                color: Colors.white,
+                size: 27,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'TALK TO THE NEWSROOM',
+                    style: TextStyle(
+                      color: Color(0xFFFF8A8A),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Contact CitizenNews',
+                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Send account, privacy or editorial questions directly to the newsroom team.',
+                    style: TextStyle(color: Color(0xFFCBD5E1), height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _ContactGuidance extends StatelessWidget {
+  const _ContactGuidance();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.focus.withValues(alpha: .06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.focus.withValues(alpha: .18)),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline_rounded, color: AppColors.focus, size: 20),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'For an article correction or safety issue, use the report button on the story. For support, include the relevant article link or username so the team can identify your concern.',
+                style: TextStyle(height: 1.45),
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class _ContactSuccess extends StatelessWidget {

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/errors/app_error.dart';
@@ -45,6 +46,11 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
   List<NewsCategory> _categories = const [];
   List<LocationRow> _areas = const [];
   List<NewsSummary> _stories = const [];
+  final Map<String, int> _reactions = {};
+  final Map<String, bool> _savedStories = {};
+  final Map<String, int> _likeDeltas = {};
+  final Map<String, int> _dislikeDeltas = {};
+  final Set<String> _busyStories = {};
   LocationRow? _country;
   LocationRow? _region;
   LocationRow? _city;
@@ -223,7 +229,9 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
         if (append) {
           if (_page > 0) _page--;
           if (mounted && version == _loadVersion) {
-            setState(() => _error = 'Connect to the internet to load more stories.');
+            setState(
+              () => _error = 'Connect to the internet to load more stories.',
+            );
           }
           return;
         }
@@ -256,7 +264,15 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
       setState(() {
         _stories = append ? [..._stories, ...rows] : rows;
         _more = rows.length == 12;
+        if (!append) {
+          _reactions.clear();
+          _savedStories.clear();
+          _likeDeltas.clear();
+          _dislikeDeltas.clear();
+          _busyStories.clear();
+        }
       });
+      unawaited(_hydrateInteractions(rows));
       if (cacheable) unawaited(_cache.write(cacheKey, rows));
     } catch (error) {
       if (append && _page > 0) _page--;
@@ -323,20 +339,13 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
     if (!session.isSignedIn) {
       final returnTo = GoRouterState.of(context).uri.toString();
       context.go(
-        Uri(
-          path: '/login',
-          queryParameters: {'returnTo': returnTo},
-        ).toString(),
+        Uri(path: '/login', queryParameters: {'returnTo': returnTo}).toString(),
       );
       return;
     }
     setState(() => _followBusy = true);
     try {
-      await _newsRepository!.setFollowing(
-        target.type,
-        target.id,
-        !_followed,
-      );
+      await _newsRepository!.setFollowing(target.type, target.id, !_followed);
       if (mounted) {
         setState(() => _followed = !_followed);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -381,6 +390,108 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
     await _load(append: true);
   }
 
+  Future<void> _hydrateInteractions(List<NewsSummary> stories) async {
+    if (stories.isEmpty || !AuthScope.read(context).isSignedIn) return;
+    final repository = _newsRepository;
+    if (repository == null) return;
+
+    final states = await Future.wait(
+      stories.map((story) async {
+        try {
+          final values = await Future.wait<dynamic>([
+            repository.currentReaction(story.id),
+            repository.isBookmarked(story.id),
+          ]);
+          return (
+            id: story.id,
+            reaction: values[0] as int,
+            saved: values[1] as bool,
+          );
+        } catch (_) {
+          return null;
+        }
+      }),
+    );
+    if (!mounted) return;
+    final visibleIds = _stories.map((story) => story.id).toSet();
+    setState(() {
+      for (final state in states) {
+        if (state == null || !visibleIds.contains(state.id)) continue;
+        _reactions.putIfAbsent(state.id, () => state.reaction);
+        _savedStories.putIfAbsent(state.id, () => state.saved);
+      }
+    });
+  }
+
+  bool _requireSignIn(NewsSummary story) {
+    if (AuthScope.read(context).isSignedIn) return true;
+    context.go(
+      '/login?returnTo=${Uri.encodeQueryComponent('/news/${story.slug}')}',
+    );
+    return false;
+  }
+
+  Future<void> _react(NewsSummary story, int value) async {
+    if (!_requireSignIn(story) || _busyStories.contains(story.id)) return;
+    setState(() => _busyStories.add(story.id));
+    try {
+      final current = _reactions[story.id] ??
+          await _newsRepository!.currentReaction(story.id);
+      final next = current == value ? 0 : value;
+      await _newsRepository!.react(story.id, next);
+      if (!mounted) return;
+      setState(() {
+        _reactions[story.id] = next;
+        var likes = _likeDeltas[story.id] ?? 0;
+        var dislikes = _dislikeDeltas[story.id] ?? 0;
+        if (current == 1) likes--;
+        if (current == -1) dislikes--;
+        if (next == 1) likes++;
+        if (next == -1) dislikes++;
+        _likeDeltas[story.id] = likes;
+        _dislikeDeltas[story.id] = dislikes;
+      });
+    } catch (error) {
+      _message(AppError.message(error), danger: true);
+    } finally {
+      if (mounted) setState(() => _busyStories.remove(story.id));
+    }
+  }
+
+  Future<void> _toggleSave(NewsSummary story) async {
+    if (!_requireSignIn(story) || _busyStories.contains(story.id)) return;
+    setState(() => _busyStories.add(story.id));
+    try {
+      final current = _savedStories[story.id] ??
+          await _newsRepository!.isBookmarked(story.id);
+      await _newsRepository!.setBookmark(story.id, !current);
+      if (!mounted) return;
+      setState(() => _savedStories[story.id] = !current);
+      _message(current ? 'Removed from saved stories.' : 'Story saved.');
+    } catch (error) {
+      _message(AppError.message(error), danger: true);
+    } finally {
+      if (mounted) setState(() => _busyStories.remove(story.id));
+    }
+  }
+
+  Future<void> _share(NewsSummary story) async {
+    await Clipboard.setData(
+      ClipboardData(text: '${story.headline}\n/news/${story.slug}'),
+    );
+    _message('Story link copied.');
+  }
+
+  void _message(String text, {bool danger = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: danger ? AppColors.redDark : AppColors.ink,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final mobile = MediaQuery.sizeOf(context).width <= AppBreakpoints.mobile;
@@ -417,27 +528,12 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
                     else if (_notFound)
                       _NotFound(kind: widget.kind)
                     else ...[
-                      const Text(
-                        'CITIZENNEWS DIRECTORY',
-                        style: TextStyle(
-                          color: AppColors.red,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.4,
-                        ),
+                      _ScopedFeedHeader(
+                        kind: widget.kind,
+                        title: _title,
+                        subtitle: _subtitle,
+                        visibleStories: _stories.length,
                       ),
-                      const SizedBox(height: 7),
-                      Text(
-                        _title,
-                        style: Theme.of(context).textTheme.headlineLarge,
-                      ),
-                      if (_subtitle.isNotEmpty) ...[
-                        const SizedBox(height: 5),
-                        Text(
-                          _subtitle,
-                          style: const TextStyle(color: AppColors.muted),
-                        ),
-                      ],
                       const SizedBox(height: 16),
                       _controls(mobile),
                       if (_error != null) ...[
@@ -462,19 +558,75 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
                           index < _stories.length;
                           index++
                         ) ...[
-                          NewsStoryCard(story: _stories[index]),
-                          const SizedBox(height: 12),
-                          if (AdsPolicy.canShowNativeAfter(_stories, index)) ...[
-                            const CitizenNativeAd(),
-                            const SizedBox(height: 12),
+                          Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 760),
+                              child: NewsStoryCard(
+                                key: ValueKey(
+                                  'scoped-story-${_stories[index].id}',
+                                ),
+                                story: _stories[index],
+                                reaction:
+                                    _reactions[_stories[index].id] ?? 0,
+                                saved:
+                                    _savedStories[_stories[index].id] ?? false,
+                                busy: _busyStories.contains(
+                                  _stories[index].id,
+                                ),
+                                likeCount:
+                                    _stories[index].likes +
+                                    (_likeDeltas[_stories[index].id] ?? 0),
+                                dislikeCount:
+                                    _stories[index].dislikes +
+                                    (_dislikeDeltas[_stories[index].id] ?? 0),
+                                onLike: () => _react(_stories[index], 1),
+                                onDislike: () => _react(_stories[index], -1),
+                                onComment: () => context.push(
+                                  '/news/${_stories[index].slug}',
+                                ),
+                                onSave: () => _toggleSave(_stories[index]),
+                                onShare: () => _share(_stories[index]),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          if (AdsPolicy.canShowBannerAfter(
+                            _stories,
+                            index,
+                          )) ...[
+                            Center(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 760,
+                                ),
+                                child: const CitizenBannerAd(),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          if (AdsPolicy.canShowNativeAfter(
+                            _stories,
+                            index,
+                          )) ...[
+                            Center(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 760,
+                                ),
+                                child: CitizenNativeAd(
+                                  key: ValueKey(
+                                    'scoped-feed-ad-${(index + 1) ~/ 3}',
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
                           ],
                         ],
                         if (_more)
                           OutlinedButton(
                             onPressed: _loading ? null : _loadMore,
-                            child: Text(
-                              _loading ? 'Loading...' : 'Load more',
-                            ),
+                            child: Text(_loading ? 'Loading...' : 'Load more'),
                           ),
                       ],
                     ],
@@ -526,7 +678,7 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
                   label: Text(_followed ? 'Following' : 'Follow'),
                 ),
               TextButton.icon(
-                onPressed: () => context.go('/explore'),
+                onPressed: () => context.push('/explore'),
                 icon: const Icon(Icons.travel_explore_rounded),
                 label: const Text('Explore places'),
               ),
@@ -581,10 +733,7 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Area'),
               items: [
-                const DropdownMenuItem(
-                  value: '',
-                  child: Text('All areas'),
-                ),
+                const DropdownMenuItem(value: '', child: Text('All areas')),
                 for (final area in _areas)
                   DropdownMenuItem(value: area.id, child: Text(area.name)),
               ],
@@ -603,9 +752,7 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
                 onPressed: () => _pickDate(true),
                 icon: const Icon(Icons.date_range_outlined),
                 label: Text(
-                  _dateFrom == null
-                      ? 'From date'
-                      : 'From ${_date(_dateFrom!)}',
+                  _dateFrom == null ? 'From date' : 'From ${_date(_dateFrom!)}',
                 ),
               ),
               OutlinedButton.icon(
@@ -661,11 +808,12 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
 
   String get _subtitle => switch (widget.kind) {
     ScopedFeedKind.country => 'Published reporting from this country.',
-    ScopedFeedKind.region => 'Local reporting from ${_country?.name ?? 'this country'}.',
+    ScopedFeedKind.region =>
+      'Local reporting from ${_country?.name ?? 'this country'}.',
     ScopedFeedKind.city => [
-        _region?.name,
-        _country?.name,
-      ].whereType<String>().join(', '),
+      _region?.name,
+      _country?.name,
+    ].whereType<String>().join(', '),
     ScopedFeedKind.category =>
       'Latest verified reporting in this news category.',
   };
@@ -674,6 +822,96 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
     String two(int number) => number.toString().padLeft(2, '0');
     return '${value.year}-${two(value.month)}-${two(value.day)}';
   }
+}
+
+class _ScopedFeedHeader extends StatelessWidget {
+  const _ScopedFeedHeader({
+    required this.kind,
+    required this.title,
+    required this.subtitle,
+    required this.visibleStories,
+  });
+
+  final ScopedFeedKind kind;
+  final String title;
+  final String subtitle;
+  final int visibleStories;
+
+  IconData get _icon => switch (kind) {
+    ScopedFeedKind.country => Icons.public_rounded,
+    ScopedFeedKind.region => Icons.map_outlined,
+    ScopedFeedKind.city => Icons.location_city_rounded,
+    ScopedFeedKind.category => Icons.topic_outlined,
+  };
+
+  String get _eyebrow => switch (kind) {
+    ScopedFeedKind.country => 'COUNTRY FEED',
+    ScopedFeedKind.region => 'REGIONAL FEED',
+    ScopedFeedKind.city => 'LOCAL FEED',
+    ScopedFeedKind.category => 'TOPIC FEED',
+  };
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [
+          AppColors.red.withValues(alpha: .08),
+          AppColors.focus.withValues(alpha: .035),
+        ],
+      ),
+      border: Border.all(color: AppColors.red.withValues(alpha: .15)),
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: AppColors.paper,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(_icon, color: AppColors.red),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _eyebrow,
+                style: const TextStyle(
+                  color: AppColors.red,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.3,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(title, style: Theme.of(context).textTheme.headlineLarge),
+              if (subtitle.isNotEmpty) ...[
+                const SizedBox(height: 5),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: AppColors.muted, height: 1.4),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (visibleStories > 0) ...[
+          const SizedBox(width: 10),
+          Chip(
+            avatar: const Icon(Icons.article_outlined, size: 16),
+            label: Text('$visibleStories'),
+          ),
+        ],
+      ],
+    ),
+  );
 }
 
 class _FilterChip extends StatelessWidget {
@@ -770,7 +1008,7 @@ class _NotFound extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           FilledButton(
-            onPressed: () => context.go('/explore'),
+            onPressed: () => context.push('/explore'),
             child: const Text('Explore news locations'),
           ),
         ],

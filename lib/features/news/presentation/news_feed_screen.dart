@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/errors/app_error.dart';
@@ -15,9 +16,10 @@ import '../../location/presentation/location_scope.dart';
 import '../data/news_repository.dart';
 import '../data/feed_cache.dart';
 import '../domain/news_models.dart';
+import 'news_story_card.dart';
 
 class NewsFeedScreen extends StatefulWidget {
-  const NewsFeedScreen({this.initialTab = 'nearby', super.key});
+  const NewsFeedScreen({this.initialTab = 'latest', super.key});
 
   final String initialTab;
 
@@ -32,6 +34,11 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
   NetworkController? _network;
   List<NewsCategory> _categories = const [];
   List<NewsSummary> _news = const [];
+  final Map<String, int> _reactions = {};
+  final Map<String, bool> _savedStories = {};
+  final Map<String, int> _likeDeltas = {};
+  final Map<String, int> _dislikeDeltas = {};
+  final Set<String> _busyStories = {};
   late String _tab;
   String _category = '';
   int _page = 0;
@@ -120,7 +127,9 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
         if (append) {
           if (_page > 0) _page--;
           if (mounted) {
-            setState(() => _error = 'Connect to the internet to load more stories.');
+            setState(
+              () => _error = 'Connect to the internet to load more stories.',
+            );
           }
           return;
         }
@@ -154,7 +163,15 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
       setState(() {
         _news = append ? [..._news, ...rows] : rows;
         _more = rows.length == 12;
+        if (!append) {
+          _reactions.clear();
+          _savedStories.clear();
+          _likeDeltas.clear();
+          _dislikeDeltas.clear();
+          _busyStories.clear();
+        }
       });
+      unawaited(_hydrateInteractions(rows));
       if (cacheable) unawaited(_cache.write(cacheKey, rows));
     } catch (error) {
       if (append && _page > 0) _page--;
@@ -179,6 +196,110 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
     await _load(append: true);
   }
 
+  Future<void> _hydrateInteractions(List<NewsSummary> stories) async {
+    if (stories.isEmpty || !AuthScope.read(context).isSignedIn) return;
+    final repository = _repository;
+    if (repository == null) return;
+
+    final states = await Future.wait(
+      stories.map((story) async {
+        try {
+          final values = await Future.wait<dynamic>([
+            repository.currentReaction(story.id),
+            repository.isBookmarked(story.id),
+          ]);
+          return (
+            id: story.id,
+            reaction: values[0] as int,
+            saved: values[1] as bool,
+          );
+        } catch (_) {
+          // Feed remains usable if an individual interaction cannot be loaded.
+          return null;
+        }
+      }),
+    );
+    if (!mounted) return;
+
+    final visibleIds = _news.map((story) => story.id).toSet();
+    setState(() {
+      for (final state in states) {
+        if (state == null || !visibleIds.contains(state.id)) continue;
+        _reactions.putIfAbsent(state.id, () => state.reaction);
+        _savedStories.putIfAbsent(state.id, () => state.saved);
+      }
+    });
+  }
+
+  bool _requireSignIn(NewsSummary story) {
+    if (AuthScope.read(context).isSignedIn) return true;
+    context.go(
+      '/login?returnTo=${Uri.encodeQueryComponent('/news/${story.slug}')}',
+    );
+    return false;
+  }
+
+  Future<void> _react(NewsSummary story, int value) async {
+    if (!_requireSignIn(story) || _busyStories.contains(story.id)) return;
+    setState(() => _busyStories.add(story.id));
+    try {
+      final current = _reactions[story.id] ??
+          await _repository!.currentReaction(story.id);
+      final next = current == value ? 0 : value;
+      await _repository!.react(story.id, next);
+      if (!mounted) return;
+      setState(() {
+        _reactions[story.id] = next;
+        var likes = _likeDeltas[story.id] ?? 0;
+        var dislikes = _dislikeDeltas[story.id] ?? 0;
+        if (current == 1) likes--;
+        if (current == -1) dislikes--;
+        if (next == 1) likes++;
+        if (next == -1) dislikes++;
+        _likeDeltas[story.id] = likes;
+        _dislikeDeltas[story.id] = dislikes;
+      });
+    } catch (error) {
+      _message(AppError.message(error), danger: true);
+    } finally {
+      if (mounted) setState(() => _busyStories.remove(story.id));
+    }
+  }
+
+  Future<void> _toggleSave(NewsSummary story) async {
+    if (!_requireSignIn(story) || _busyStories.contains(story.id)) return;
+    setState(() => _busyStories.add(story.id));
+    try {
+      final current = _savedStories[story.id] ??
+          await _repository!.isBookmarked(story.id);
+      await _repository!.setBookmark(story.id, !current);
+      if (!mounted) return;
+      setState(() => _savedStories[story.id] = !current);
+      _message(current ? 'Removed from saved stories.' : 'Story saved.');
+    } catch (error) {
+      _message(AppError.message(error), danger: true);
+    } finally {
+      if (mounted) setState(() => _busyStories.remove(story.id));
+    }
+  }
+
+  Future<void> _share(NewsSummary story) async {
+    await Clipboard.setData(
+      ClipboardData(text: '${story.headline}\n/news/${story.slug}'),
+    );
+    _message('Story link copied.');
+  }
+
+  void _message(String text, {bool danger = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: danger ? AppColors.redDark : AppColors.ink,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final location = LocationScope.watch(context);
@@ -188,13 +309,19 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
       child: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
-          padding: EdgeInsets.fromLTRB(mobile ? 14 : 36, 20, mobile ? 14 : 36, 90),
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            mobile ? 14 : 36,
+            20,
+            mobile ? 14 : 36,
+            90,
+          ),
           children: [
-            const Text(
-              'LIVE LOCAL EDITION',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.2),
+            _FeedHeader(
+              tab: _tab,
+              locationLabel: location.selectedLabel,
             ),
-            const SizedBox(height: 15),
+            const SizedBox(height: 18),
             _FeedTabs(
               selected: _tab,
               onSelected: (tab) {
@@ -202,46 +329,63 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
                 _load();
               },
             ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 9,
-              runSpacing: 9,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: location.detecting
-                      ? null
-                      : () async {
-                          await location.detectCurrentLocation();
-                          await _load();
-                        },
-                  icon: const Icon(Icons.my_location_rounded),
-                  label: Text(
-                    location.selectedLabel.isEmpty
-                        ? 'Use my location'
-                        : location.selectedLabel,
-                  ),
-                ),
-                OutlinedButton(
-                  onPressed: () => context.go('/explore'),
-                  child: const Text('Choose city'),
-                ),
-                SizedBox(
-                  width: mobile ? double.infinity : 320,
-                  child: TextField(
-                    controller: _search,
-                    textInputAction: TextInputAction.search,
-                    onSubmitted: (_) => _load(),
-                    decoration: InputDecoration(
-                      hintText: 'Search stories',
-                      prefixIcon: const Icon(Icons.search_rounded),
-                      suffixIcon: IconButton(
-                        onPressed: _load,
-                        icon: const Icon(Icons.arrow_forward_rounded),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.paper,
+                border: Border.all(color: AppColors.border),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Wrap(
+                spacing: 9,
+                runSpacing: 9,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: mobile ? double.infinity : 360,
+                    child: TextField(
+                      controller: _search,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _load(),
+                      decoration: InputDecoration(
+                        hintText: 'Search news, places or topics',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: IconButton(
+                          tooltip: 'Search',
+                          onPressed: _load,
+                          icon: const Icon(Icons.arrow_forward_rounded),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                  if (_tab != 'worldwide')
+                    OutlinedButton.icon(
+                      onPressed: location.detecting
+                          ? null
+                          : () async {
+                              await location.detectCurrentLocation();
+                              await _load();
+                            },
+                      icon: location.detecting
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.my_location_rounded),
+                      label: Text(
+                        location.selectedLabel.isEmpty
+                            ? 'Use my location'
+                            : location.selectedLabel,
+                      ),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: () => context.go('/explore'),
+                    icon: const Icon(Icons.travel_explore_rounded),
+                    label: const Text('Explore places'),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 14),
             SingleChildScrollView(
@@ -261,7 +405,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
                       label: category.name,
                       selected: _category == category.id,
                       onTap: () {
-                        context.go(
+                        context.push(
                           '/category/${Uri.encodeComponent(category.slug)}',
                         );
                       },
@@ -279,12 +423,7 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
             ],
             const SizedBox(height: 18),
             if (_loading && _news.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(50),
-                  child: CircularProgressIndicator(),
-                ),
-              )
+              const _FeedLoading()
             else if (_news.isEmpty)
               _EmptyFeed(
                 nearby: _tab == 'nearby',
@@ -292,17 +431,60 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
               )
             else ...[
               for (var index = 0; index < _news.length; index++) ...[
-                _NewsCard(story: _news[index]),
-                const SizedBox(height: 12),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: NewsStoryCard(
+                      key: ValueKey('feed-story-${_news[index].id}'),
+                      story: _news[index],
+                      reaction: _reactions[_news[index].id] ?? 0,
+                      saved: _savedStories[_news[index].id] ?? false,
+                      busy: _busyStories.contains(_news[index].id),
+                      likeCount:
+                          _news[index].likes +
+                          (_likeDeltas[_news[index].id] ?? 0),
+                      dislikeCount:
+                          _news[index].dislikes +
+                          (_dislikeDeltas[_news[index].id] ?? 0),
+                      onLike: () => _react(_news[index], 1),
+                      onDislike: () => _react(_news[index], -1),
+                      onComment: () =>
+                          context.push('/news/${_news[index].slug}'),
+                      onSave: () => _toggleSave(_news[index]),
+                      onShare: () => _share(_news[index]),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 if (AdsPolicy.canShowNativeAfter(_news, index)) ...[
-                  const CitizenNativeAd(),
-                  const SizedBox(height: 12),
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 760),
+                      child: CitizenNativeAd(
+                        key: ValueKey('home-feed-ad-${(index + 1) ~/ 3}'),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                 ],
               ],
               if (_more)
-                OutlinedButton(
-                  onPressed: _loading ? null : _loadMore,
-                  child: Text(_loading ? 'Loading...' : 'Load more'),
+                Center(
+                  child: SizedBox(
+                    width: 280,
+                    child: OutlinedButton.icon(
+                      onPressed: _loading ? null : _loadMore,
+                      icon: _loading
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.expand_more_rounded),
+                      label: Text(
+                        _loading ? 'Loading stories...' : 'Load more stories',
+                      ),
+                    ),
+                  ),
                 ),
             ],
           ],
@@ -312,102 +494,207 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
   }
 }
 
+class _FeedHeader extends StatelessWidget {
+  const _FeedHeader({required this.tab, required this.locationLabel});
+
+  final String tab;
+  final String locationLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = switch (tab) {
+      'trending' => 'What people are reading',
+      'nearby' => 'News around you',
+      'following' => 'From people you follow',
+      'worldwide' => 'News from around the world',
+      _ => 'Latest stories',
+    };
+    final subtitle = switch (tab) {
+      'trending' => 'Popular reporting and conversations right now.',
+      'nearby' when locationLabel.isNotEmpty => locationLabel,
+      'nearby' => 'Choose a city for a more relevant local feed.',
+      'following' => 'Updates from followed reporters, places and topics.',
+      'worldwide' => 'Fresh reporting across countries and communities.',
+      _ => 'Fresh reporting from verified community reporters.',
+    };
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 5,
+          height: 54,
+          decoration: BoxDecoration(
+            color: AppColors.red,
+            borderRadius: BorderRadius.circular(99),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'CITIZENNEWS FEED',
+                style: TextStyle(
+                  color: AppColors.red,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.35,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                  fontSize: 28,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: const TextStyle(color: AppColors.muted, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FeedLoading extends StatelessWidget {
+  const _FeedLoading();
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 760),
+      child: Column(
+        children: [
+          for (var index = 0; index < 2; index++) ...[
+            Container(
+              height: 360,
+              decoration: BoxDecoration(
+                color: AppColors.paper,
+                border: Border.all(color: AppColors.border),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
 class _FeedTabs extends StatelessWidget {
   const _FeedTabs({required this.selected, required this.onSelected});
   final String selected;
   final ValueChanged<String> onSelected;
 
+  static const tabs = [
+    ('latest', 'Latest', Icons.schedule_rounded),
+    ('trending', 'Trending', Icons.local_fire_department_rounded),
+    ('nearby', 'For you', Icons.near_me_rounded),
+    ('following', 'Following', Icons.people_alt_outlined),
+    ('worldwide', 'World', Icons.public_rounded),
+  ];
+
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            for (final tab in const ['nearby', 'latest', 'trending', 'following', 'worldwide'])
-              Padding(
-                padding: const EdgeInsets.only(right: 7),
-                child: ChoiceChip(
-                  label: Text('${tab[0].toUpperCase()}${tab.substring(1)}'),
-                  selected: selected == tab,
-                  onSelected: (_) => onSelected(tab),
-                ),
+  Widget build(BuildContext context) => Material(
+    color: AppColors.paper,
+    shape: RoundedRectangleBorder(
+      side: const BorderSide(color: AppColors.border),
+      borderRadius: BorderRadius.circular(14),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.all(5),
+      child: Row(
+        children: [
+          for (final tab in tabs)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: _FeedTabButton(
+                label: tab.$2,
+                icon: tab.$3,
+                selected: selected == tab.$1,
+                onTap: () => onSelected(tab.$1),
               ),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _FeedTabButton extends StatelessWidget {
+  const _FeedTabButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: selected ? AppColors.red : Colors.transparent,
+    borderRadius: BorderRadius.circular(10),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 17,
+              color: selected ? Colors.white : AppColors.muted,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : AppColors.ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ],
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class _CategoryChip extends StatelessWidget {
-  const _CategoryChip({required this.label, required this.selected, required this.onTap});
+  const _CategoryChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
   final String label;
   final bool selected;
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(right: 7),
-        child: FilterChip(label: Text(label), selected: selected, onSelected: (_) => onTap()),
-      );
-}
-
-class _NewsCard extends StatelessWidget {
-  const _NewsCard({required this.story});
-  final NewsSummary story;
-
-  @override
-  Widget build(BuildContext context) => Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => context.go('/news/${story.slug}'),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final wide = constraints.maxWidth > 650;
-              final image = story.imageUrl == null
-                  ? Container(
-                      color: AppColors.surface,
-                      height: wide ? 220 : 190,
-                      child: const Center(child: Icon(Icons.newspaper_rounded, size: 44)),
-                    )
-                  : Image.network(
-                      story.imageUrl!,
-                      height: wide ? 220 : 190,
-                      width: wide ? 300 : double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => Container(
-                        color: AppColors.surface,
-                        height: 190,
-                        child: const Center(child: Icon(Icons.broken_image_outlined)),
-                      ),
-                    );
-              final content = Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        Text(story.category.toUpperCase(), style: const TextStyle(color: AppColors.red, fontWeight: FontWeight.w800, fontSize: 10)),
-                        if (story.breaking) const Text('BREAKING', style: TextStyle(color: AppColors.red, fontWeight: FontWeight.w800, fontSize: 10)),
-                        if (story.corrected) const Text('CORRECTED', style: TextStyle(color: AppColors.focus, fontWeight: FontWeight.w800, fontSize: 10)),
-                      ],
-                    ),
-                    const SizedBox(height: 7),
-                    Text(story.headline, style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 7),
-                    Text(story.summary, maxLines: 3, overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 12),
-                    Text('${story.fullName}${story.verified ? ' - verified' : ''} - ${story.city}', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
-                    const SizedBox(height: 8),
-                    Text('${story.views} views  ${story.likes} likes  ${story.comments} comments', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                  ],
-                ),
-              );
-              return wide
-                  ? Row(children: [SizedBox(width: 300, child: image), Expanded(child: content)])
-                  : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [image, content]);
-            },
-          ),
-        ),
-      );
+    padding: const EdgeInsets.only(right: 7),
+    child: FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
+    ),
+  );
 }
 
 class _EmptyFeed extends StatelessWidget {
@@ -416,19 +703,30 @@ class _EmptyFeed extends StatelessWidget {
   final VoidCallback chooseCity;
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(34),
-          child: Column(
-            children: [
-              const Icon(Icons.location_searching_rounded, size: 42, color: AppColors.red),
-              const SizedBox(height: 12),
-              Text(nearby ? 'No nearby stories yet' : 'No stories found', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 10),
-              if (nearby) OutlinedButton(onPressed: chooseCity, child: const Text('Choose another city')),
-            ],
+    child: Padding(
+      padding: const EdgeInsets.all(34),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.location_searching_rounded,
+            size: 42,
+            color: AppColors.red,
           ),
-        ),
-      );
+          const SizedBox(height: 12),
+          Text(
+            nearby ? 'No nearby stories yet' : 'No stories found',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 10),
+          if (nearby)
+            OutlinedButton(
+              onPressed: chooseCity,
+              child: const Text('Choose another city'),
+            ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _FeedError extends StatelessWidget {
@@ -437,12 +735,12 @@ class _FeedError extends StatelessWidget {
   final VoidCallback retry;
   @override
   Widget build(BuildContext context) => Card(
-        child: ListTile(
-          leading: const Icon(Icons.error_outline_rounded, color: AppColors.red),
-          title: Text(message),
-          trailing: TextButton(onPressed: retry, child: const Text('Retry')),
-        ),
-      );
+    child: ListTile(
+      leading: const Icon(Icons.error_outline_rounded, color: AppColors.red),
+      title: Text(message),
+      trailing: TextButton(onPressed: retry, child: const Text('Retry')),
+    ),
+  );
 }
 
 class _CachedFeedNotice extends StatelessWidget {

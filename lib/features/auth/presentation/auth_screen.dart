@@ -7,6 +7,7 @@ import 'package:phone_form_field/phone_form_field.dart';
 
 import '../../../core/errors/app_error.dart';
 import '../../../core/layout/app_breakpoints.dart';
+import '../../../core/navigation/app_navigation.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../location/presentation/location_scope.dart';
 import '../data/auth_service.dart';
@@ -39,6 +40,22 @@ extension on AuthMode {
     AuthMode.otp => 'Verify email',
     AuthMode.forgotPassword => 'Send recovery email',
     AuthMode.resetPassword => 'Save new password',
+  };
+
+  IconData get icon => switch (this) {
+    AuthMode.login => Icons.login_rounded,
+    AuthMode.signup => Icons.person_add_alt_1_rounded,
+    AuthMode.otp => Icons.mark_email_read_outlined,
+    AuthMode.forgotPassword => Icons.lock_reset_rounded,
+    AuthMode.resetPassword => Icons.password_rounded,
+  };
+
+  String get eyebrow => switch (this) {
+    AuthMode.login => 'SIGN IN',
+    AuthMode.signup => 'JOIN CITIZENNEWS',
+    AuthMode.otp => 'EMAIL VERIFICATION',
+    AuthMode.forgotPassword => 'ACCOUNT RECOVERY',
+    AuthMode.resetPassword => 'SECURE YOUR ACCOUNT',
   };
 }
 
@@ -126,12 +143,17 @@ class _AuthScreenState extends State<AuthScreen> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: mobile
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 30,
-                      ),
-                      child: _buildForm(context),
+                  ? Column(
+                      children: [
+                        _MobileAuthBrand(mode: widget.mode),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 30,
+                          ),
+                          child: _buildForm(context),
+                        ),
+                      ],
                     )
                   : Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,7 +186,7 @@ class _AuthScreenState extends State<AuthScreen> {
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
-            onPressed: () => context.go('/'),
+            onPressed: () => context.backOr('/'),
             icon: const Icon(Icons.arrow_back_rounded, size: 17),
             label: const Text('Back to news'),
             style: TextButton.styleFrom(foregroundColor: AppColors.muted),
@@ -212,6 +234,9 @@ class _AuthScreenState extends State<AuthScreen> {
                     label: 'Full name',
                     child: TextFormField(
                       controller: _name,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.person_outline_rounded),
+                      ),
                       textCapitalization: TextCapitalization.words,
                       autofillHints: const [AutofillHints.name],
                       textInputAction: TextInputAction.next,
@@ -226,6 +251,9 @@ class _AuthScreenState extends State<AuthScreen> {
                     helperSuccess: _usernameStatus == 'Username is available.',
                     child: TextFormField(
                       controller: _username,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.alternate_email_rounded),
+                      ),
                       autofillHints: const [AutofillHints.username],
                       textInputAction: TextInputAction.next,
                       inputFormatters: [
@@ -245,6 +273,9 @@ class _AuthScreenState extends State<AuthScreen> {
                     label: 'Email address',
                     child: TextFormField(
                       controller: _email,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.mail_outline_rounded),
+                      ),
                       keyboardType: TextInputType.emailAddress,
                       autofillHints: const [AutofillHints.email],
                       textInputAction: TextInputAction.next,
@@ -273,6 +304,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           ? (_) => _submit()
                           : null,
                       decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.lock_outline_rounded),
                         suffixIcon: IconButton(
                           tooltip: _showPassword
                               ? 'Hide password'
@@ -307,6 +339,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       autofillHints: const [AutofillHints.newPassword],
                       textInputAction: TextInputAction.done,
                       decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.lock_outline_rounded),
                         suffixIcon: IconButton(
                           tooltip: _showConfirm
                               ? 'Hide password'
@@ -525,6 +558,9 @@ class _AuthScreenState extends State<AuthScreen> {
                 ],
                 FilledButton(
                   onPressed: _busy ? null : _submit,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(50),
+                  ),
                   child: _busy
                       ? const SizedBox(
                           width: 20,
@@ -713,6 +749,62 @@ class _AuthScreenState extends State<AuthScreen> {
       if (_resendWait <= 0) timer.cancel();
     });
   }
+}
+
+class _MobileAuthBrand extends StatelessWidget {
+  const _MobileAuthBrand({required this.mode});
+
+  final AuthMode mode;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+    decoration: const BoxDecoration(
+      gradient: LinearGradient(
+        colors: [Color(0xFF172C3A), Color(0xFF29475A)],
+      ),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .1),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(mode.icon, color: Colors.white),
+        ),
+        const SizedBox(width: 13),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                mode.eyebrow,
+                style: const TextStyle(
+                  color: Color(0xFFFC8794),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Local voices. Trusted news.',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _AuthStory extends StatelessWidget {
