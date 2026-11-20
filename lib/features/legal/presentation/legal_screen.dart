@@ -33,10 +33,31 @@ class LegalScreen extends StatelessWidget {
                   90,
                 ),
                 children: [
-                  _LegalHeader(title: document.title, page: page),
-                  const SizedBox(height: 22),
-                  for (final section in document.sections)
-                    _LegalSectionCard(section: section),
+                  TweenAnimationBuilder<double>(
+                    duration: const Duration(milliseconds: 420),
+                    curve: Curves.easeOutCubic,
+                    tween: Tween(begin: 0, end: 1),
+                    builder: (context, value, child) => Opacity(
+                      opacity: value,
+                      child: Transform.translate(
+                        offset: Offset(0, 18 * (1 - value)),
+                        child: child,
+                      ),
+                    ),
+                    child: _LegalHeader(title: document.title, page: page),
+                  ),
+                  const SizedBox(height: 18),
+                  if (page == 'about') ...[
+                    const _AboutHighlights(),
+                    const SizedBox(height: 18),
+                  ],
+                  for (var index = 0;
+                      index < document.sections.length;
+                      index++)
+                    _AnimatedLegalSection(
+                      index: index,
+                      section: document.sections[index],
+                    ),
                   if (page == 'privacy' && ads.privacyRequired) ...[
                     const SizedBox(height: 4),
                     Align(
@@ -121,9 +142,11 @@ class _LegalHeader extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'CITIZENNEWS POLICY',
-                    style: TextStyle(
+                  Text(
+                    page == 'about'
+                        ? 'ABOUT CITIZENNEWS'
+                        : 'CITIZENNEWS POLICY',
+                    style: const TextStyle(
                       color: Color(0xFFFF8A8A),
                       fontSize: 10,
                       fontWeight: FontWeight.w900,
@@ -139,9 +162,14 @@ class _LegalHeader extends StatelessWidget {
                         ),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
-                    'Clear standards for a safe, transparent and accountable news community.',
-                    style: TextStyle(color: Color(0xFFCBD5E1), height: 1.4),
+                  Text(
+                    page == 'about'
+                        ? 'Community reporting that keeps people connected to the places and stories around them.'
+                        : 'Clear standards for a safe, transparent and accountable news community.',
+                    style: const TextStyle(
+                      color: Color(0xFFCBD5E1),
+                      height: 1.4,
+                    ),
                   ),
                 ],
               ),
@@ -164,7 +192,33 @@ class _LegalSectionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(section.title, style: Theme.of(context).textTheme.titleLarge),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFECEE),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.article_outlined,
+                  color: AppColors.red,
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Text(
+                  section.title,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontSize: 20,
+                      ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 9),
           Text(
             section.text,
@@ -178,6 +232,136 @@ class _LegalSectionCard extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _AnimatedLegalSection extends StatelessWidget {
+  const _AnimatedLegalSection({required this.index, required this.section});
+
+  final int index;
+  final LegalSection section;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+        duration: Duration(milliseconds: 380 + (index * 70)),
+        curve: Curves.easeOutCubic,
+        tween: Tween(begin: 0, end: 1),
+        builder: (context, value, child) => Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 14 * (1 - value)),
+            child: child,
+          ),
+        ),
+        child: _LegalSectionCard(section: section),
+      );
+}
+
+class _AboutHighlights extends StatelessWidget {
+  const _AboutHighlights();
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 620;
+          final items = const [
+            _AboutHighlight(
+              icon: Icons.location_on_outlined,
+              title: 'Local discovery',
+              text: 'Find reporting by country, region and city.',
+            ),
+            _AboutHighlight(
+              icon: Icons.verified_user_outlined,
+              title: 'Verified access',
+              text: 'Reporter tools require identity review and approval.',
+            ),
+            _AboutHighlight(
+              icon: Icons.fact_check_outlined,
+              title: 'Editorial review',
+              text: 'Submissions are checked before publication.',
+            ),
+          ];
+          return compact
+              ? Column(
+                  children: [
+                    for (var index = 0; index < items.length; index++) ...[
+                      items[index],
+                      if (index != items.length - 1)
+                        const SizedBox(height: 10),
+                    ],
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var index = 0; index < items.length; index++) ...[
+                      Expanded(child: items[index]),
+                      if (index != items.length - 1)
+                        const SizedBox(width: 10),
+                    ],
+                  ],
+                );
+        },
+      );
+}
+
+class _AboutHighlight extends StatelessWidget {
+  const _AboutHighlight({
+    required this.icon,
+    required this.title,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.paper,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFECEE),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: AppColors.red, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppColors.ink,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    text,
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class LegalRelatedLinks extends StatelessWidget {

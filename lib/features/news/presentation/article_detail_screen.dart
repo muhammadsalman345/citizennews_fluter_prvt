@@ -9,6 +9,8 @@ import '../../../core/ads/ad_widgets.dart';
 import '../../../core/ads/ads_policy.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/layout/app_breakpoints.dart';
+import '../../../core/seo/seo_builders.dart';
+import '../../../core/seo/seo_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/presentation/auth_scope.dart';
 import '../data/news_repository.dart';
@@ -70,6 +72,17 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
   }
 
   @override
+  void didUpdateWidget(covariant ArticleDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.slug != widget.slug && _repository != null) {
+      _article = null;
+      _comments = const [];
+      _history = const [];
+      _load();
+    }
+  }
+
+  @override
   void dispose() {
     _comment.dispose();
     _gallery.dispose();
@@ -113,9 +126,15 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
         _following = results[4] as bool;
         _commentsError = null;
       });
+      SeoService.apply(articleSeo(article));
       _recordView(article.summary.id);
     } catch (error) {
-      if (mounted) setState(() => _error = AppError.message(error));
+      if (mounted) {
+        setState(() => _error = AppError.message(error));
+        SeoService.apply(
+          noIndexSeo('/news/${Uri.encodeComponent(widget.slug)}'),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }

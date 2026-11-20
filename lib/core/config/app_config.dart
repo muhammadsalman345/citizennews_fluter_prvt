@@ -8,6 +8,10 @@ abstract final class AppConfig {
     'AUTH_REDIRECT_URL',
     defaultValue: 'citizennews://reset-password',
   );
+  static const webBaseUrl = String.fromEnvironment(
+    'WEB_BASE_URL',
+    defaultValue: 'https://vocal-territory-415310.web.app',
+  );
 
   static String get publishableKey =>
       _publishableKey.isNotEmpty ? _publishableKey : _legacyAnonKey;

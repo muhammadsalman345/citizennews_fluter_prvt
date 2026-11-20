@@ -1,11 +1,16 @@
 {
-    "name": "Citizen News",
+    "id": "/",
+    "name": "CitizenNews - Verified Local News",
     "short_name": "CitizenNews",
-    "start_url": ".",
+    "start_url": "/",
+    "scope": "/",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "Citizen-powered local news and verified reporting.",
+    "background_color": "#ffffff",
+    "theme_color": "#df2638",
+    "description": "Verified local news, breaking stories and trusted citizen reporting.",
+    "lang": "en",
+    "dir": "ltr",
+    "categories": ["news", "social"],
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
@@ -23,13 +28,13 @@
             "src": "icons/Icon-maskable-192.png",
             "sizes": "192x192",
             "type": "image/png",
-            "purpose": "maskable"
+            "purpose": "any maskable"
         },
         {
             "src": "icons/Icon-maskable-512.png",
             "sizes": "512x512",
             "type": "image/png",
-            "purpose": "maskable"
+            "purpose": "any maskable"
         }
     ]
 }

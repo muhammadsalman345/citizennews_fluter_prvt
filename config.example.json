@@ -1,5 +1,6 @@
 {
   "SUPABASE_URL": "https://your-project.supabase.co",
   "SUPABASE_PUBLISHABLE_KEY": "your-public-publishable-or-anon-key",
-  "AUTH_REDIRECT_URL": "citizennews://reset-password"
+  "AUTH_REDIRECT_URL": "citizennews://reset-password",
+  "WEB_BASE_URL": "https://vocal-territory-415310.web.app"
 }

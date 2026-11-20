@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/errors/app_error.dart';
 import '../../../core/layout/app_breakpoints.dart';
+import '../../../core/seo/seo_builders.dart';
+import '../../../core/seo/seo_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/presentation/auth_scope.dart';
 import '../../news/presentation/news_story_card.dart';
@@ -27,6 +29,15 @@ class _PublicReporterScreenState extends State<PublicReporterScreen> {
   String? _error;
 
   @override
+  void didUpdateWidget(covariant PublicReporterScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.username != widget.username && _repository != null) {
+      _data = null;
+      _load();
+    }
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_initialized) return;
@@ -48,9 +59,24 @@ class _PublicReporterScreenState extends State<PublicReporterScreen> {
     });
     try {
       final data = await _repository!.load(widget.username);
-      if (mounted) setState(() => _data = data);
+      if (mounted) {
+        if (data == null) {
+          setState(() => _error = 'This reporter was not found.');
+          SeoService.apply(
+            noIndexSeo('/reporter/${Uri.encodeComponent(widget.username)}'),
+          );
+        } else {
+          setState(() => _data = data);
+          SeoService.apply(reporterSeo(data));
+        }
+      }
     } catch (error) {
-      if (mounted) setState(() => _error = AppError.message(error));
+      if (mounted) {
+        setState(() => _error = AppError.message(error));
+        SeoService.apply(
+          noIndexSeo('/reporter/${Uri.encodeComponent(widget.username)}'),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }

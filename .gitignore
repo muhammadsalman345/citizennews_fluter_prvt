@@ -13,3 +13,4 @@ macos/Pods/
 .idea/
 .vscode/
 config.json
+.release-signing/

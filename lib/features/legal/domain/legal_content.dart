@@ -23,14 +23,24 @@ const legalDocuments = <String, LegalDocument>{
     title: 'About CitizenNews',
     sections: [
       LegalSection(
-        title: 'Our purpose',
+        title: 'Local news, powered by local people',
         text:
-            'CitizenNews is a community reporting platform for local news, accident reports and job listings. Readers can explore stories, follow reporters and locations, save articles and join conversations. Users who want to submit posts apply for reporter access through identity verification.',
+            'CitizenNews is a community-first news platform built to help people discover timely reporting from the places they know. Readers can explore local and worldwide stories, follow reporters and locations, save useful articles, and take part in respectful conversations.',
       ),
       LegalSection(
-        title: 'Our approach',
+        title: 'How publishing works',
         text:
-            'Approved reporters submit photos and a detected posting location. Editors review submissions before publication. Reporter verification confirms access to reporting features; it does not guarantee that every claim is accurate. Identity documents and exact posting coordinates are not shown on public article pages.',
+            'People who want to contribute apply for reporter access through identity verification. Approved reporters can submit local news, accident reports and job listings with relevant photos and a detected posting area. CitizenNews editors review submissions before publication and may request changes when more context or evidence is needed.',
+      ),
+      LegalSection(
+        title: 'Trust, privacy and transparency',
+        text:
+            'Reporter verification controls access to reporting tools, while editorial review assesses each submission on its own evidence and context. Verification is not a guarantee that every claim is accurate. Identity documents and exact posting coordinates are kept out of public article pages, and important factual corrections are presented transparently.',
+      ),
+      LegalSection(
+        title: 'Built for the community',
+        text:
+            'CitizenNews is designed for readers, community reporters and editors to work together. Location-based discovery makes nearby reporting easier to find, public reporter profiles make contributions visible, and reporting, moderation and correction tools help the community raise concerns responsibly.',
       ),
     ],
   ),

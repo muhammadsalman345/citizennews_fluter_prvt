@@ -21,6 +21,7 @@ import '../../features/reporter/presentation/reporter_leaderboard_screen.dart';
 import '../../features/reporter/presentation/reporter_workspace_screen.dart';
 import '../../features/reporter/presentation/public_reporter_screen.dart';
 import '../../features/verification/presentation/verification_screen.dart';
+import '../../core/seo/seo_route_scope.dart';
 import '../shell/app_shell.dart';
 
 GoRouter createAppRouter(AuthSessionController session) => GoRouter(
@@ -101,16 +102,22 @@ GoRouter createAppRouter(AuthSessionController session) => GoRouter(
     }
     return null;
   },
-  errorBuilder: (context, state) => const ModulePlaceholderScreen(
-    eyebrow: 'NOT FOUND',
-    title: 'This page does not exist',
-    description: 'Return to the CitizenNews home page and continue browsing.',
-    icon: Icons.travel_explore_rounded,
+  errorBuilder: (context, state) => SeoRouteScope(
+    location: state.uri.toString(),
+    notFound: true,
+    child: const ModulePlaceholderScreen(
+      eyebrow: 'NOT FOUND',
+      title: 'This page does not exist',
+      description: 'Return to the CitizenNews home page and continue browsing.',
+      icon: Icons.travel_explore_rounded,
+    ),
   ),
   routes: [
     ShellRoute(
-      builder: (context, state, child) =>
-          AppShell(location: state.uri.path, child: child),
+      builder: (context, state, child) => SeoRouteScope(
+        location: state.uri.toString(),
+        child: AppShell(location: state.uri.path, child: child),
+      ),
       routes: [
         GoRoute(path: '/', builder: (context, state) => const NewsFeedScreen()),
         GoRoute(

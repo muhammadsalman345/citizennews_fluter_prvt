@@ -95,6 +95,13 @@ interstitial caps, third-session/background-only app-open ads, optional rewarded
 ad-free period, post-submission reward choice, persistent frequency state and click-traffic protection.
 Authentication, chat, reporting, account, administration and legal routes remain interruption-free.
 
+The web SEO layer uses approved Supabase content as its single source of truth. Flutter applies
+route-aware canonical, robots, Open Graph, X Card and structured-data tags in the browser, while the
+dependency-free Node gateway returns database-backed article HTML, dynamic public sitemaps and
+correct noindex/404 headers to search and social crawlers. See [SEO_DEPLOYMENT.md](SEO_DEPLOYMENT.md)
+before deploying the web build; production web traffic must pass through the gateway for reliable
+per-post previews and indexing.
+
 The old standalone Node.js REST client has been removed. Flutter uses the same Supabase platform,
 RPC functions and row-level security policies as the Ionic application.
 

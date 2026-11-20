@@ -10,6 +10,8 @@ import '../../../core/ads/ads_policy.dart';
 import '../../../core/layout/app_breakpoints.dart';
 import '../../../core/network/network_controller.dart';
 import '../../../core/network/network_scope.dart';
+import '../../../core/seo/seo_builders.dart';
+import '../../../core/seo/seo_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/presentation/auth_scope.dart';
 import '../../location/data/location_repository.dart';
@@ -188,6 +190,7 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
           break;
       }
       _scopeReady = true;
+      _updateSeo();
       if (_notFound) return;
       await Future.wait([_load(), _refreshFollow()]);
     } catch (error) {
@@ -209,6 +212,42 @@ class _ScopedNewsFeedScreenState extends State<ScopedNewsFeedScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  String get _seoPath => switch (widget.kind) {
+    ScopedFeedKind.country => '/country/${widget.slug}',
+    ScopedFeedKind.region =>
+      '/region/${widget.countrySlug}/${widget.slug}',
+    ScopedFeedKind.city => '/city/${widget.countrySlug}/${widget.slug}',
+    ScopedFeedKind.category => '/category/${widget.slug}',
+  };
+
+  void _updateSeo() {
+    if (_notFound) {
+      SeoService.apply(noIndexSeo(_seoPath));
+      return;
+    }
+    final (title, description) = switch (widget.kind) {
+      ScopedFeedKind.country => (
+        '${_country?.name ?? 'Country'} News',
+        'Read verified local and breaking news from ${_country?.name ?? 'this country'} on CitizenNews.',
+      ),
+      ScopedFeedKind.region => (
+        '${_region?.name ?? 'Regional'} News',
+        'Read verified news from ${_region?.name ?? 'this region'}, ${_country?.name ?? ''} on CitizenNews.',
+      ),
+      ScopedFeedKind.city => (
+        '${_city?.name ?? 'City'} News',
+        'Read verified local and breaking news from ${_city?.name ?? 'this city'}, ${_country?.name ?? ''} on CitizenNews.',
+      ),
+      ScopedFeedKind.category => (
+        '${_routeCategory?.name ?? 'Category'} News',
+        'Read the latest verified ${(_routeCategory?.name ?? '').toLowerCase()} stories on CitizenNews.',
+      ),
+    };
+    SeoService.apply(
+      scopedFeedSeo(title: title, description: description, path: _seoPath),
+    );
   }
 
   Future<void> _load({bool append = false}) async {

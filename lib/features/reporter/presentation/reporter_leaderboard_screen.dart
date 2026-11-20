@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/layout/app_breakpoints.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_shimmer.dart';
 import '../../auth/presentation/auth_scope.dart';
 import '../../location/data/location_repository.dart';
 import '../../location/domain/location_models.dart';
@@ -142,25 +143,45 @@ class _LeaderboardState extends State<ReporterLeaderboardScreen> {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      if (_loading)
-                        const Padding(
-                          padding: EdgeInsets.all(50),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      else if (_rows.isEmpty)
-                        const _LeaderboardEmpty()
-                      else
-                        for (final reporter in _rows) ...[
-                          _ReporterRankCard(
-                            reporter: reporter,
-                            onTap: reporter.username.isEmpty
-                                ? null
-                                : () => context.push(
-                                      '/reporter/${Uri.encodeComponent(reporter.username)}',
-                                    ),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 320),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(0, .025),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: child,
                           ),
-                          const SizedBox(height: 9),
-                        ],
+                        ),
+                        child: _loading
+                            ? const _ReporterListShimmer(
+                                key: ValueKey('reporter-loading'),
+                              )
+                            : _rows.isEmpty
+                                ? const _LeaderboardEmpty(
+                                    key: ValueKey('reporter-empty'),
+                                  )
+                                : Column(
+                                    key: const ValueKey('reporter-results'),
+                                    children: [
+                                      for (final reporter in _rows) ...[
+                                        _ReporterRankCard(
+                                          reporter: reporter,
+                                          onTap: reporter.username.isEmpty
+                                              ? null
+                                              : () => context.push(
+                                                    '/reporter/${Uri.encodeComponent(reporter.username)}',
+                                                  ),
+                                        ),
+                                        const SizedBox(height: 9),
+                                      ],
+                                    ],
+                                  ),
+                      ),
                     ],
                   ),
                 ),
@@ -452,7 +473,7 @@ class _LeaderboardNotice extends StatelessWidget {
 }
 
 class _LeaderboardEmpty extends StatelessWidget {
-  const _LeaderboardEmpty();
+  const _LeaderboardEmpty({super.key});
 
   @override
   Widget build(BuildContext context) => const Card(
@@ -468,6 +489,63 @@ class _LeaderboardEmpty extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      );
+}
+
+class _ReporterListShimmer extends StatelessWidget {
+  const _ReporterListShimmer({super.key});
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+        child: AppShimmer(
+          child: Column(
+            children: [
+              for (var index = 0; index < 5; index++) ...[
+                const _ReporterSkeletonCard(),
+                if (index != 4) const SizedBox(height: 9),
+              ],
+            ],
+          ),
+        ),
+      );
+}
+
+class _ReporterSkeletonCard extends StatelessWidget {
+  const _ReporterSkeletonCard();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          color: AppColors.paper,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: const Row(
+          children: [
+            ShimmerBlock(width: 48, height: 48, radius: 14),
+            SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ShimmerBlock(width: 150, height: 14),
+                  SizedBox(height: 9),
+                  ShimmerBlock(width: 220, height: 10),
+                ],
+              ),
+            ),
+            SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                ShimmerBlock(width: 54, height: 13),
+                SizedBox(height: 9),
+                ShimmerBlock(width: 72, height: 9),
+              ],
+            ),
+          ],
         ),
       );
 }

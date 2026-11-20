@@ -1,0 +1,27 @@
+User-agent: *
+Allow: /
+Disallow: /account
+Disallow: /admin
+Disallow: /analytics
+Disallow: /appeals
+Disallow: /comments
+Disallow: /dashboard
+Disallow: /following
+Disallow: /forgot-password
+Disallow: /login
+Disallow: /messages
+Disallow: /my-stories
+Disallow: /otp
+Disallow: /points
+Disallow: /profile
+Disallow: /report-news
+Disallow: /reset-password
+Disallow: /saved
+Disallow: /search
+Disallow: /settings
+Disallow: /signup
+Disallow: /verification
+Disallow: /wallet
+Disallow: /welcome
+
+Sitemap: https://vocal-territory-415310.web.app/sitemap.xml
